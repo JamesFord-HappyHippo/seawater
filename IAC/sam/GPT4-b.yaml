@@ -1,0 +1,3266 @@
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  LambdaBucketName:
+    Type: String
+    Default: tim-sb2-lambda
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: TIM
+  CognitoArn:
+    Type: String  
+    Default: arn:aws:cognito-idp:us-east-2:943677585228:userpool/us-east-2_7F0LoGK72
+  myDBArn:
+    Type: String  
+    Default: arn:aws:rds:us-east-2:943677585228:db:happyv1sandbox2
+Globals:
+  Function:
+    Handler: index.handler
+    Runtime: nodejs18.x
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole 
+        - arn:aws:iam::aws:policy/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Policies:
+        - PolicyName: LambdaVPCAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ec2:*NetworkInterface*
+              Resource: '*'
+        - PolicyName: RDSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+              Resource: !Ref MyDBArn
+        - PolicyName: AccessSpecificSSMParameters
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource:
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-host
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-user
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-pass
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-name
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-port
+
+
+
+
+
+ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !Ref CognitoArn
+            Identity:
+              Header: Authorization
+
+CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties: 
+      Type: COGNITO_USER_POOLS
+      Name: CognitoUserPoolAuthorizer
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref ApiGateway
+      ProviderARNs: 
+        - !Ref CognitoArn
+
+approvalGroupCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+approvalGroupUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupReadApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupEmailCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup/email
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupEmailReadApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup/email
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupEmailDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup/email
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  clientGetApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/clients
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  clientCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/clients
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  clientUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/clients
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  clientDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/clients
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  clientReadCompanyApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/clients/companies
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  clientCreateCompanyApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/clients/companies
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  clientUpdateCompanyApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/clients/companies
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  clientDeleteCompanyApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/clients/companies
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  companyJoinedApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  companyCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  companyDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  actionStatsApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/action/approval-stats
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  actionByEmpApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/action/completed-actions
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  actionInitApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/action/initiate
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  actionByApprovalApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/action/pending-actions
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  rejectActionApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/action/reject
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  updateAndAdvanceApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/action/update-and-advance
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  departmentGetApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/department
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  departmentDetailGetApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/deptdetail
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  departmentDetailCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/deptdetail
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  departmentDetailUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/deptdetail
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  departmentDetailDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/deptdetail
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  jobGetApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/job
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  jobDetailGetApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/jobdetail
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  jobDetailCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/jobdetail
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  jobDetailUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/jobdetail
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  jobDetailDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/jobdetail
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  locationGetApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/location
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  locationDetailGetApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/locationdetail
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  locationDetailCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/locationdetail
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  locationDetailUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/locationdetail
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  locationDetailDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/company/locationdetail
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  configActionsReadApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/config/actions
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  configActionsCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/config/actions
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  configActionsUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/config/actions
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  configActionsDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/config/actions
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  configApprovalReadApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/config/approvals
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  configApprovalCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/config/approvals
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  configApprovalUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/config/approvals
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  configApprovalDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/config/approvals
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  updateEmployeeApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/emp
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  deleteEmployeeApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/emp
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  queryEmployeesApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/emp
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  loadCSVDataApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/load/csv
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  loadJSONDataApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/load/json
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  loadDeleteByLoadIDApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/load/delete/rowid
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  loadDeleteByRowIDApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/load/delete/loadid
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  loadEmployeeCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/load/emp
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  loadEmployeeUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/load/emp
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  tmpInEmpAllApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/load/emp
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  tmpInEmpAllDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/load/emp
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getWageAnalysisCompanyApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/wa/co
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getWageAnalysisDeptApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/wa/dept
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getWageAnalysisJobApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/wa/job
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getWageAnalysisLocationApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/wa/loc
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getAttritionAnalysisCompanyApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/attrit/co
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getAttritionAnalysisDeptApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/attrit/dept
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getAttritionAnalysisJobApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/attrit/job
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getAttritionAnalysisLocationApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/attrit/loc
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getTenureAnalysisCompanyApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/ten/co
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getTenureAnalysisDeptApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/ten/dept
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getTenureAnalysisJobApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/ten/job
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  getTenureAnalysisLocationApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/ten/loc
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  emailCreateEmailApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/email
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  emailDeleteEmailApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/email
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  emailUpdateEmailApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/email
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  emailGetEmailApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/email
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  emailCreateTemplateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/email/template
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  emailUpdateTemplateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/email/template
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  emailGetTemplateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/email/template
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  emailDeleteTemplateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/email/template
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  userCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/user
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  userUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/user
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  userReadApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/user
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  userDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/user
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  userAddEmailApprovalGroupApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/user/approver
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  userDeleteEmailApprovalGroupApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/user/approver
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment: 
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup
+            Method: POST
+
+
+  approvalGroupUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup
+            Method: PUT
+
+  approvalGroupReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupRead.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupReadEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup
+            Method: GET
+
+
+  approvalGroupDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup
+            Method: DELETE
+
+
+  approvalGroupEmailCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupEmailCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupEmailCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup/email
+            Method: POST
+
+  approvalGroupEmailReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupEmailRead.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupEmailReadEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup/email
+            Method: GET
+
+  approvalGroupEmailDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupEmailDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupEmailDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup/email
+            Method: DELETE
+
+  clientGetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: clientGet.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        clientGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients
+            Method: GET
+ 
+
+  clientCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: clientCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        clientCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients
+            Method: POST
+
+
+  clientUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: clientUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        clientUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients
+            Method: PUT
+
+
+  clientDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: clientDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        clientDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients
+            Method: DELETE
+
+
+  clientGetCompanyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: clientCompany.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        clientCompanyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients/companies
+            Method: GET
+
+
+  clientCreateCompanyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: clientCreateCompany.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        clientCompanyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients/companies
+            Method: POST
+
+
+  clientAddCompanyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: clientAddCompany.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        clientCompanyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients/companies
+            Method: PUT
+
+
+  clientDeleteCompanyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: clientDeleteCompany.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        clientCompanyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients/companies
+            Method: DELETE
+
+
+  companyJoinedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: companyJoined.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        companyJoinedEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company
+            Method: GET
+
+
+  companyCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: companyCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        companyCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company
+            Method: POST
+
+
+  companyDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: companyDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        companyDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company
+            Method: DELETE
+
+
+  actionStatsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: actionStats.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        actionStatsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/action/approval-stats
+            Method: GET
+
+
+  actionByEmpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: actionByEmp.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        actionByEmpEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/action/completed-actions
+            Method: GET
+
+
+  actionInitFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: actionInit.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        actionInitEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/action/initiate
+            Method: POST
+
+
+  actionByApprovalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: actionByApproval.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        actionByApprovalEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/action/pending-actions
+            Method: GET
+
+
+  rejectActionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: rejectAction.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        rejectActionEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/action/reject
+            Method: POST
+
+
+  updateAndAdvanceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: updateAndAdvance.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        updateAndAdvanceEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/action/update-and-advance
+            Method: POST
+
+
+  departmentGetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: departmentGet.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        departmentGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/department
+            Method: GET
+
+
+  departmentDetailGetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: departmentDetailGet.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        departmentDetailGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/deptdetail
+            Method: GET
+
+
+  departmentDetailCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: departmentDetailCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        departmentDetailCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/deptdetail
+            Method: POST
+
+
+  departmentDetailUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: departmentDetailUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        departmentDetailUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/deptdetail
+            Method: PUT
+
+
+  departmentDetailDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: departmentDetailDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        departmentDetailDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/deptdetail
+            Method: DELETE
+
+
+  jobGetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: jobGet.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        jobGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/job
+            Method: GET
+
+
+  jobDetailGetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: jobDetailGet.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        jobDetailGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/jobdetail
+            Method: GET
+
+  jobDetailCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: jobDetailCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        jobDetailCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/jobdetail
+            Method: POST
+
+
+  jobDetailUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: jobDetailUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        jobDetailUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/jobdetail
+            Method: PUT
+
+
+  jobDetailDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: jobDetailDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        jobDetailDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/jobdetail
+            Method: DELETE
+
+
+  locationGetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: locationGet.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        locationGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/location
+            Method: GET
+
+
+  locationDetailGetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: locationDetailGet.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        locationDetailGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/locationdetail
+            Method: GET
+
+
+  locationDetailCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: locationDetailCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        locationDetailCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/locationdetail
+            Method: POST
+
+
+  locationDetailUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: locationDetailUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        locationDetailUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/locationdetail
+            Method: PUT
+
+
+  locationDetailDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: locationDetailDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        locationDetailDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/locationdetail
+            Method: DELETE
+
+
+  configActionsReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: configActionsRead.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        configActionsReadEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/actions
+            Method: GET
+
+
+  configActionsCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: configActionsCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        configActionsCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/actions
+            Method: POST
+
+
+  configActionsUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: configActionsUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        configActionsUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/actions
+            Method: PUT
+
+
+  configActionsDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: configActionsDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        configActionsDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/actions
+            Method: DELETE
+
+
+  configApprovalReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: configApprovalRead.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        configApprovalReadEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/approvals
+            Method: GET
+
+
+  configApprovalCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: configApprovalCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        configApprovalCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/approvals
+            Method: POST
+
+
+  configApprovalUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: configApprovalUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        configApprovalUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/approvals
+            Method: PUT
+
+
+  configApprovalDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: configApprovalDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        configApprovalDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/approvals
+            Method: DELETE
+
+
+  updateEmployeeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: updateEmployee.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        updateEmployeeEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/emp
+            Method: PUT
+
+
+  deleteEmployeeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: deleteEmployee.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        deleteEmployeeEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/emp
+            Method: DELETE
+
+
+  queryEmployeesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: queryEmployees.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        queryEmployeesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/emp
+            Method: GET
+
+
+  loadCSVDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: loadCSVData.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        loadCSVDataEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/load/csv
+            Method: POST
+
+
+  loadDeleteByLoadIDFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: loadDeleteByLoadID.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        loadDeleteByLoadIDEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/load/delete/rowid
+            Method: POST
+
+
+  loadDeleteByRowIDFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: loadDeleteByRowID.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        loadDeleteByRowIDEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/load/delete/loadid
+            Method: POST
+
+
+  loadCreateEmployeeUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: loadCreateEmployeeUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        loadEmployeeUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/load/emp
+            Method: POST
+
+
+  loadEmployeeUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: loadEmployeeUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        loadEmployeeUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/load/emp
+            Method: PUT
+
+  tmpInEmpAllFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: tmpInEmpAll.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        tmpInEmpAllEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/load/emp
+            Method: GET
+
+
+  LoadEmployeeDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: LoadEmployeeDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        tmpInEmpAllEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/load/emp
+            Method: DELETE
+
+
+  getWageAnalysisCompanyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getWageAnalysisCompany.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getWageAnalysisCompanyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/wa/co
+            Method: GET
+
+
+  getWageAnalysisDeptFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getWageAnalysisDept.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getWageAnalysisDeptEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/wa/dept
+            Method: GET
+
+
+  getWageAnalysisJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getWageAnalysisJob.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getWageAnalysisJobEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/wa/job
+            Method: GET
+
+
+  getWageAnalysisLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getWageAnalysisLocation.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getWageAnalysisLocationEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/wa/loc
+            Method: GET
+
+
+  getAttritionAnalysisCompanyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getAttritionAnalysisCompany.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getAttritionAnalysisCompanyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/attrit/co
+            Method: GET
+
+
+  getAttritionAnalysisDeptFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getAttritionAnalysisDept.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getAttritionAnalysisDeptEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/attrit/dept
+            Method: GET
+
+
+  getAttritionAnalysisJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getAttritionAnalysisJob.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getAttritionAnalysisJobEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/attrit/job
+            Method: GET
+
+
+  getAttritionAnalysisLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getAttritionAnalysisLocation.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getAttritionAnalysisLocationEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/attrit/loc
+            Method: GET
+
+
+  getTenureAnalysisCompanyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getTenureAnalysisCompany.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getTenureAnalysisCompanyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/ten/co
+            Method: GET
+
+
+  getTenureAnalysisDeptFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getTenureAnalysisDept.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getTenureAnalysisDeptEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/ten/dept
+            Method: GET
+
+
+  getTenureAnalysisJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getTenureAnalysisJob.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getTenureAnalysisJobEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/ten/job
+            Method: GET
+
+
+  getTenureAnalysisLocationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: getTenureAnalysisLocation.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        getTenureAnalysisLocationEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/ten/loc
+            Method: GET
+
+
+  emailCreateEmailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: emailCreateEmail.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        emailCreateEmailEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email
+            Method: POST
+
+
+  emailDeleteEmailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: emailDeleteEmail.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        emailDeleteEmailEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email
+            Method: DELETE
+
+
+  emailUpdateEmailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: emailUpdateEmail.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        emailUpdateEmailEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email
+            Method: PUT
+
+
+  emailGetEmailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: emailGetEmail.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        emailGetEmailEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email
+            Method: GET
+
+  emailCreateTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: emailCreateTemplate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        emailCreateTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/template
+            Method: POST
+
+  emailUpdateTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: emailUpdateTemplate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        emailUpdateTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/template
+            Method: PUT
+
+
+  emailGetTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: emailGetTemplate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        emailGetTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/template
+            Method: GET
+
+
+  emailDeleteTemplateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: emailDeleteTemplate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        emailDeleteTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/template
+            Method: DELETE
+
+
+  userCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: userCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        userCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user
+            Method: POST
+
+
+  userUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: userUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        userUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user
+            Method: PUT
+
+
+  userReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: userRead.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        userReadEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user
+            Method: GET
+
+
+  userDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: userDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        userDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user
+            Method: DELETE
+
+
+  userAddEmailApprovalGroupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: userAddEmailApprovalGroup.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        userAddEmailApprovalGroupEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user/approver
+            Method: PUT
+
+
+  userDeleteEmailApprovalGroupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: userDeleteEmailApprovalGroup.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        userDeleteEmailApprovalGroupEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user/approver
+            Method: DELETE
+
+
+Outputs:
+  ApiURL:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  DatabaseEndpoint:
+    Description: "Public endpoint for the RDS database"
+    Value: !GetAtt TIMV1Database.Endpoint.Address
+

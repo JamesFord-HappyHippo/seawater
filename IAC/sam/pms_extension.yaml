@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  TIMBucketName:
+    Type: String
+    Default: tim-dev-lambda
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: TIMdev
+  CognitoArn:
+    Type: String  
+    Default: arn:aws:cognito-idp:us-east-2:532595801838:userpool/us-east-2_oWj5l1j6m
+  myDBArn:
+    Type: String  
+    Default: arn:aws:rds:us-east-2:532595801838:db:happy2
+  tim4pass:
+    Type: String
+    Default: 123_FUtime
+  timport:
+    Type: String
+    Default: 5432
+  timname:
+    Type: String
+    Default: TIM
+  timhost:
+    Type: String
+    Default: happy2.cwkfm0ctmqb3.us-east-2.rds.amazonaws.com
+  timuser:
+    Type: String
+    Default: postgres
+
+Resources:
+  # PMS Lambda Functions
+  contributionRatingCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: contributionRatingCreate_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/pms/contribution
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  workStyleCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: workStyleCreate_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/pms/workstyle
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  careerTrackCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: careerTrackCreate_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/pms/career
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  supervisionRequiredCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: supervisionRequiredCreate_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/pms/supervision
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  rehireStatusCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: rehireStatusCreate_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/pms/rehire
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  regrettableLossReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: regrettableLossRead_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/pms/regrettable
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  pmsRecommendationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: recommendationsRead_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/pms/recommendations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  pmsImplementationProgressFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: implementationProgressRead_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/pms/progress
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer

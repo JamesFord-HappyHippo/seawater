@@ -1,0 +1,17 @@
+aws s3 sync s3://tim-demo-release/ s3://tim-demo-live/ --delete
+
+
+{
+   "Version": "2012-10-17",
+   "Statement": [
+       {
+           "Sid": "CloudFrontOriginAccessIdentity",
+           "Effect": "Allow",
+           "Principal": {
+               "AWS": "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity [OAI_ID]"
+           },
+           "Action": "s3:GetObject",
+           "Resource": "arn:aws:s3:::tim-demo-live/*"
+       }
+   ]
+}

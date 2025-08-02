@@ -1,0 +1,15 @@
+Resources:
+
+  ApiGateway:
+    Properties:
+      Auth:
+        Authorizers:
+          MyCognitoAuth:
+            UserPoolArn: arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abcd1234
+
+  LambdaFunction:
+    Events:
+      ApiEvent:
+        Properties:
+          Auth:
+            Authorizer: MyCognitoAuth

@@ -1,0 +1,271 @@
+# Marketplace Integration Extensions
+# Adds new handlers for enhanced integration marketplace functionality
+# Extends existing tim-complete-api.yaml with new endpoints
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Marketplace Integration Extensions for TimBridge Platform
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  DBHost:
+    Type: String
+    Description: Database host endpoint
+  
+  DBName:
+    Type: String
+    Description: Database name
+  
+  DBUser:
+    Type: String
+    Description: Database username
+  
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: Database password
+  
+  DBPort:
+    Type: String
+    Default: "5432"
+    Description: Database port
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        DB_HOST: !Ref DBHost
+        DB_NAME: !Ref DBName
+        DB_USER: !Ref DBUser
+        DB_PASSWORD: !Ref DBPassword
+        DB_PORT: !Ref DBPort
+        DB_SSL: "true"
+        NODE_ENV: !Ref Environment
+
+Resources:
+  # Template Schema Handler
+  TemplateSchemaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "tim-integration-template-schema-${Environment}"
+      CodeUri: ../../src/backend/src/handlers/integrations/callisto/
+      Handler: templateSchema.handler
+      Description: Returns field schema for marketplace integration templates
+      Events:
+        GetTemplateSchema:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TimIntegrationAPI
+            Path: /tim/integrations/callisto/template-schema
+            Method: GET
+        OptionsTemplateSchema:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TimIntegrationAPI
+            Path: /tim/integrations/callisto/template-schema
+            Method: OPTIONS
+      Tags:
+        Service: TimBridge
+        Function: TemplateSchema
+        Environment: !Ref Environment
+
+  # Auto-Suggest Mappings Handler
+  SuggestMappingsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "tim-integration-suggest-mappings-${Environment}"
+      CodeUri: ../../src/backend/src/handlers/integrations/callisto/
+      Handler: suggestMappings.handler
+      Description: Returns field mapping suggestions with confidence scores
+      Events:
+        PostSuggestMappings:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TimIntegrationAPI
+            Path: /tim/integrations/callisto/suggest-mappings
+            Method: POST
+        OptionsSuggestMappings:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TimIntegrationAPI
+            Path: /tim/integrations/callisto/suggest-mappings
+            Method: OPTIONS
+      Tags:
+        Service: TimBridge
+        Function: SuggestMappings
+        Environment: !Ref Environment
+
+  # Test Connection Handler
+  TestConnectionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "tim-integration-test-connection-${Environment}"
+      CodeUri: ../../src/backend/src/handlers/integrations/callisto/
+      Handler: testConnection.handler
+      Description: Tests connectivity to source systems and validates configuration
+      Timeout: 60  # Longer timeout for connection testing
+      Events:
+        PostTestConnection:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TimIntegrationAPI
+            Path: /tim/integrations/callisto/test-connection
+            Method: POST
+        OptionsTestConnection:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TimIntegrationAPI
+            Path: /tim/integrations/callisto/test-connection
+            Method: OPTIONS
+      Tags:
+        Service: TimBridge
+        Function: TestConnection
+        Environment: !Ref Environment
+
+  # API Gateway for Integration endpoints
+  TimIntegrationAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "tim-integration-marketplace-api-${Environment}"
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+        MaxAge: "'600'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+      Tags:
+        Service: TimBridge
+        Component: IntegrationMarketplace
+        Environment: !Ref Environment
+
+  # Database table for connection test results (optional enhancement)
+  ConnectionTestResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "tim-connection-test-results-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: template_code
+          AttributeType: S
+        - AttributeName: connection_config_hash
+          AttributeType: S
+      KeySchema:
+        - AttributeName: template_code
+          KeyType: HASH
+        - AttributeName: connection_config_hash
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Service
+          Value: TimBridge
+        - Key: Component
+          Value: IntegrationMarketplace
+        - Key: Environment
+          Value: !Ref Environment
+
+  # IAM Role for Lambda functions to access DynamoDB
+  IntegrationLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "tim-integration-lambda-role-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: !GetAtt ConnectionTestResultsTable.Arn
+      Tags:
+        - Key: Service
+          Value: TimBridge
+        - Key: Component
+          Value: IntegrationMarketplace
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Log Groups for better monitoring
+  TemplateSchemaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/tim-integration-template-schema-${Environment}"
+      RetentionInDays: 14
+
+  SuggestMappingsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/tim-integration-suggest-mappings-${Environment}"
+      RetentionInDays: 14
+
+  TestConnectionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/tim-integration-test-connection-${Environment}"
+      RetentionInDays: 14
+
+Outputs:
+  IntegrationAPIEndpoint:
+    Description: "API Gateway endpoint URL for Integration Marketplace"
+    Value: !Sub "https://${TimIntegrationAPI}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+    Export:
+      Name: !Sub "${AWS::StackName}-IntegrationAPIEndpoint"
+
+  TemplateSchemaFunctionArn:
+    Description: "Template Schema Lambda Function ARN"
+    Value: !GetAtt TemplateSchemaFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-TemplateSchemaFunctionArn"
+
+  SuggestMappingsFunctionArn:
+    Description: "Suggest Mappings Lambda Function ARN"
+    Value: !GetAtt SuggestMappingsFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-SuggestMappingsFunctionArn"
+
+  TestConnectionFunctionArn:
+    Description: "Test Connection Lambda Function ARN"
+    Value: !GetAtt TestConnectionFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-TestConnectionFunctionArn"
+
+  ConnectionTestResultsTableName:
+    Description: "DynamoDB table for connection test results"
+    Value: !Ref ConnectionTestResultsTable
+    Export:
+      Name: !Sub "${AWS::StackName}-ConnectionTestResultsTable"

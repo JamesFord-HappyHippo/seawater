@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  TIMBucketName:
+    Type: String
+    Default: tim-dev-lambda
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: TIMdev
+  CognitoArn:
+    Type: String  
+    Default: arn:aws:cognito-idp:us-east-2:532595801838:userpool/us-east-2_oWj5l1j6m
+  myDBArn:
+    Type: String  
+    Default: arn:aws:rds:us-east-2:532595801838:db:happy2
+  tim4pass:
+    Type: String
+    Default: 123_FUtime
+  timport:
+    Type: String
+    Default: 5432
+  timname:
+    Type: String
+    Default: TIM
+  timhost:
+    Type: String
+    Default: happy2.cwkfm0ctmqb3.us-east-2.rds.amazonaws.com
+  timuser:
+    Type: String
+    Default: postgres
+  StageName:
+    Type: String
+    Default: Prod
+
+Resources:
+  # API Gateway
+  ApiGatewayApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref StageName
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !Ref CognitoArn
+
+  # Organization Structure Lambda
+  getOrganizationStructureFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: getOrganizationStructure_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /tim/org/structure
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: RDSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds-db:connect
+                Resource: !Ref myDBArn
+
+Outputs:
+  OrganizationStructureApi:
+    Description: "Organization Structure API endpoint"
+    Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/tim/org/structure"
+  ApiGatewayApiId:
+    Description: "API Gateway ID"
+    Value: !Ref ApiGatewayApi

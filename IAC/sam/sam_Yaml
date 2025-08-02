@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  
+  APIGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+
+  ActionApprovalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: tim-dev-lambda
+        Key: approvalGroupCreate.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        PostActionApproval:
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /tim/approvalgroup
+            Method: POST
+
+  ActionByApprovalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: tim-dev-lambda
+        Key: approvalGroupUpdate.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Events:  
+        PutActionByApproval:
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /tim/approvalgroup
+            Method: PUT
+
+  ActionByEmpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: tim-dev-lambda
+        Key: actionByEmp.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        GetActionByEmp:
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /tim/company/action/completed-actions
+            Method: GET
+
+  # Mappings for all 142 Lambda functions
+
+  UserDeleteEmailApprovalGroupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: tim-dev-lambda
+        Key: userDeleteEmailApprovalGroup.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        DeleteUserEmailApprovalGroup:  
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /tim/user/approver
+            Method: DELETE
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: '2012-10-17' 
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                Resource: arn:aws:logs:*:*:*

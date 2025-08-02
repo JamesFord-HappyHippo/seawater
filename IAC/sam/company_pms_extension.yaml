@@ -1,0 +1,337 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  TIMBucketName:
+    Type: String
+    Default: tim-dev-lambda
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: TIMdev
+  CognitoArn:
+    Type: String  
+    Default: arn:aws:cognito-idp:us-east-2:532595801838:userpool/us-east-2_oWj5l1j6m
+  myDBArn:
+    Type: String  
+    Default: arn:aws:rds:us-east-2:532595801838:db:happy2
+  tim4pass:
+    Type: String
+    Default: 123_FUtime
+  timport:
+    Type: String
+    Default: 5432
+  timname:
+    Type: String
+    Default: TIM
+  timhost:
+    Type: String
+    Default: happy2.cwkfm0ctmqb3.us-east-2.rds.amazonaws.com
+  timuser:
+    Type: String
+    Default: postgres
+
+Globals:
+  Function:
+    Handler: index.handler
+    Runtime: nodejs18.x
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Policies:
+        - PolicyName: LambdaVPCAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ec2:*NetworkInterface*
+              Resource: '*'
+        - PolicyName: RDSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+              Resource: arn:aws:rds:us-east-2:943677585228:db:happyv1sandbox2
+
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: arn:aws:cognito-idp:us-east-2:532595801838:userpool/us-east-2_oWj5l1j6m
+            Identity:
+              Header: Authorization
+
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties: 
+      Type: COGNITO_USER_POOLS
+      Name: CognitoUserPoolAuthorizer
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref ApiGateway
+      ProviderARNs: 
+        - arn:aws:cognito-idp:us-east-2:532595801838:userpool/us-east-2_oWj5l1j6m
+
+  # Core Evaluation Endpoints
+  companyPMSEvaluationCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: evaluationCreate.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/evaluation
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  companyPMSEvaluationReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: evaluationRead.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/evaluation
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  companyPMSEvaluationUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: evaluationUpdate.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/evaluation
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  companyPMSEvaluationDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: evaluationDelete.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/evaluation
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # Metrics Endpoints
+  companyPMSMetricsCompanyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: metricsCompany.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/metrics/company
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  companyPMSMetricsClientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: metricsClient.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/metrics/client
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # Risk Analysis Endpoints
+  companyPMSRiskRegrettableFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: riskRegrettable.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/risk/regrettable
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  companyPMSRiskTrendsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: riskTrends.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/risk/trends
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # Career Development Endpoints
+  companyPMSCareerGuidanceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: careerGuidance.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/career/guidance
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  companyPMSCareerRecommendationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/backend/src/handlers/pms
+      Handler: careerRecommendations.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/pms/career/recommendations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+Outputs:
+  ApiURL:
+    Description: 'URL of the service endpoint'
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/'

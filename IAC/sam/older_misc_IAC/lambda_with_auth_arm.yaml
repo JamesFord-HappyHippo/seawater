@@ -1,0 +1,292 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  TIMBucketName:
+    Type: String
+    Default: tim-dev-lambda
+  FileProcessingBucketName:
+    Type: String
+    Default: tim-dev-file-processing
+    Description: S3 bucket for file processing (PDF, Excel, CSV uploads)
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: TIMdev-ARM
+  CognitoArn:
+    Type: String  
+    Default: arn:aws:cognito-idp:us-east-2:532595801838:userpool/us-east-2_oWj5l1j6m
+  myDBArn:
+    Type: String  
+    Default: arn:aws:rds:us-east-2:532595801838:db:happy2
+  tim4pass:
+    Type: String
+    Default: 123_FUtime
+  timport:
+    Type: String
+    Default: 5432
+  timname:
+    Type: String
+    Default: TIM
+  timhost:
+    Type: String
+    Default: happy2.cwkfm0ctmqb3.us-east-2.rds.amazonaws.com
+  timuser:
+    Type: String
+    Default: postgres
+  credentialEncryptionKey:
+    Type: String
+    Default: a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+    Description: 256-bit encryption key for credential storage (64 hex characters)
+
+Globals:
+  Function:
+    Handler: index.handler
+    Runtime: nodejs18.x
+    Architectures:
+      - arm64  # ARM64 ARCHITECTURE SPECIFICATION
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Policies:
+        - PolicyName: LambdaVPCAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ec2:*NetworkInterface*
+              Resource: '*'
+        - PolicyName: RDSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+              Resource: arn:aws:rds:us-east-2:943677585228:db:happyv1sandbox2
+        - PolicyName: S3FileProcessingAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:DeleteObject
+                - s3:ListBucket
+              Resource: 
+                - !Sub "arn:aws:s3:::${FileProcessingBucketName}/*"
+                - !Sub "arn:aws:s3:::${FileProcessingBucketName}"
+        - PolicyName: TextractAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - textract:AnalyzeDocument
+                - textract:DetectDocumentText
+                - textract:StartDocumentAnalysis
+                - textract:GetDocumentAnalysis
+              Resource: '*'
+
+  ApiGatewayARM:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: arn:aws:cognito-idp:us-east-2:532595801838:userpool/us-east-2_oWj5l1j6m
+            Identity:
+              Header: Authorization
+
+  CognitoAuthorizerARM:
+    Type: AWS::ApiGateway::Authorizer
+    Properties: 
+      Type: COGNITO_USER_POOLS
+      Name: CognitoUserPoolAuthorizerARM
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref ApiGatewayARM
+      ProviderARNs: 
+        - arn:aws:cognito-idp:us-east-2:532595801838:userpool/us-east-2_oWj5l1j6m
+
+# =====================================================
+# ARM TEST FUNCTIONS - Start with simple, low-risk functions
+# =====================================================
+
+  # Test Function 1: Simple CRUD - User Read (ARM)
+  userReadFunctionARM:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: userRead_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST:  !Ref timhost
+          DB_USER:  !Ref timuser
+          DB_PASS:  !Ref tim4pass
+          DB_NAME:  !Ref timname
+          DB_PORT:  !Ref timport
+      Events:
+        userReadEventARM:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayARM
+            Path: /tim-arm/user
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizerARM
+
+  # Test Function 2: Simple CRUD - Company Get (ARM)
+  companyGetFunctionARM:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: companyGet_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST:  !Ref timhost
+          DB_USER:  !Ref timuser
+          DB_PASS:  !Ref tim4pass
+          DB_NAME:  !Ref timname
+          DB_PORT:  !Ref timport
+      Events:
+        companyGetEventARM:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayARM
+            Path: /tim-arm/company
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizerARM
+
+  # Test Function 3: Integration - Credential Get (ARM)
+  credentialGetFunctionARM:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: unifiedCredentialHandler_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+          CREDENTIAL_ENCRYPTION_KEY: !Ref credentialEncryptionKey
+      Events:
+        credentialGetEventARM:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayARM
+            Path: /tim-arm/credentials
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizerARM
+
+  # Test Function 4: Integration - Health Metrics (ARM)
+  getHealthMetricsFunctionARM:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: getHealthMetrics_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getHealthMetricsEventARM:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayARM
+            Path: /tim-arm/integrations/health
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizerARM
+
+  # Test Function 5: Data Processing - Test Connection (ARM)
+  testConnectionFunctionARM:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: testConnection_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        testConnectionEventARM:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayARM
+            Path: /tim-arm/integrations/test-connection
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizerARM
+
+Outputs:
+  ApiURLARM:
+    Description: 'URL of the ARM service endpoint'
+    Value: !Sub 'https://${ApiGatewayARM}.execute-api.${AWS::Region}.amazonaws.com/prod/'
+  
+  ARMTestEndpoints:
+    Description: 'ARM Test Endpoints'
+    Value: !Sub |
+      User Read (ARM): https://${ApiGatewayARM}.execute-api.${AWS::Region}.amazonaws.com/prod/tim-arm/user
+      Company Get (ARM): https://${ApiGatewayARM}.execute-api.${AWS::Region}.amazonaws.com/prod/tim-arm/company
+      Credentials (ARM): https://${ApiGatewayARM}.execute-api.${AWS::Region}.amazonaws.com/prod/tim-arm/credentials
+      Health Metrics (ARM): https://${ApiGatewayARM}.execute-api.${AWS::Region}.amazonaws.com/prod/tim-arm/integrations/health
+      Test Connection (ARM): https://${ApiGatewayARM}.execute-api.${AWS::Region}.amazonaws.com/prod/tim-arm/integrations/test-connection
+
+  ARMTestingInstructions:
+    Description: 'How to test ARM vs x86 performance'
+    Value: |
+      1. Deploy this ARM stack alongside existing x86 stack
+      2. Test identical endpoints: /tim/user vs /tim-arm/user  
+      3. Compare CloudWatch metrics: Duration, Memory, Cold Start
+      4. Run load tests against both architectures
+      5. Monitor cost differences in billing dashboard

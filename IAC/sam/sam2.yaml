@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: '2010-09-09' 
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+
+  LambdaRole: 
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: lambda-permissions
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds-data:ExecuteStatement
+                  - ssm:GetParameters
+                Resource:
+                  - arn:aws:rds:*
+                  - arn:aws:ssm:*
+
+  ActionApprovalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: tim-dev-lambda
+        Key: actionApproval.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: /tim-db-host
+          DB_USER: /tim-db-user
+          DB_PASS: /tim-db-pass
+          DB_NAME: /tim-db-name
+          DB_PORT: /tim-db-port
+      Events:
+        PostActionApproval:
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /actions/approve
+            Method: POST
+            
+  ActionByApprovalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: tim-dev-lambda
+        Key: actionByApproval.zip
+      Handler: index.handler
+      Environment:
+        Variables:
+          DB_HOST: /tim-db-host
+          DB_USER: /tim-db-user
+          DB_PASS: /tim-db-pass
+          DB_NAME: /tim-db-name
+          DB_PORT: /tim-db-port
+      Events:
+        GetActionByApproval:  
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /actions/byApproval
+            Method: GET  
+
+  ActionByEmpFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: tim-dev-lambda
+        Key: actionByEmp.zip
+      Handler: index.handler
+      Environment:
+        Variables:
+          DB_HOST: /tim-db-host
+          DB_USER: /tim-db-user
+          DB_PASS: /tim-db-pass
+          DB_NAME: /tim-db-name
+          DB_PORT: /tim-db-port
+      Events:  
+        GetActionByEmp:
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /actions/byEmp
+            Method: GET
+            
+  # Mappings for 2 additional functions
+
+  APIGateway: 
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      DefinitionBody: 
+        # API definition
+
+  LambdaToRDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroupIngress

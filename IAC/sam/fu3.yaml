@@ -1,0 +1,438 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  LambdaBucketName:
+    Type: String
+    Default: tim-dev-lambda
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: TIM
+  CognitoArn:
+    Type: String  
+    Default: arn:aws:cognito-idp:us-east-2:943677585228:userpool/us-east-2_7F0LoGK72
+
+Globals:
+  Function:
+    Handler: index.handler
+    Runtime: nodejs18.x
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole 
+        - arn:aws:iam::aws:policy/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Policies:
+        - PolicyName: LambdaVPCAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ec2:*NetworkInterface*
+              Resource: '*'
+        - PolicyName: RDSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+              Resource: !GetAtt MyDB.Arn
+        - PolicyName: AccessSpecificSSMParameters
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource:
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-host
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-user
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-pass
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-name
+                - !Sub arn:aws:ssm:${Region}:${AccountId}:parameter/tim-db-port
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+
+  LambdaSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: LambdaSG
+      VpcId: !Ref VPC
+      GroupDescription: Security Group for Lambda Functions
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: DbSecurityGroup
+      VpcId: !Ref VPC
+      GroupDescription: Security Group for RDS Database
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '5432' # Port for PostgreSQL
+          ToPort: '5432'
+          SourceSecurityGroupId: !Ref LambdaSG
+        - IpProtocol: tcp
+          FromPort: '5432'
+          ToPort: '5432'
+          CidrIp: 0.0.0.0/0 # Allows all IP addresses
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+
+  DBSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: 'Subnet group for RDS instance'
+      SubnetIds: 
+        - !Ref PrivateSubnet # Assuming another subnet for HA is defined elsewhere in the template or already exists
+
+  TIMV1Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 20
+      DBInstanceClass: db.t2.micro
+      PubliclyAccessible: true
+      Engine: postgres
+      DBName: !Sub '{{resolve:ssm:/tim-db-name}}'
+      MasterUsername: !Sub '{{resolve:ssm:/tim-db-user}}'
+      MasterUserPassword: !Sub '{{resolve:ssm:/tim-db-pass}}'
+      VPCSecurityGroups:
+        - !Ref DbSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties: 
+      Type: COGNITO_USER_POOLS
+      Name: CognitoUserPoolAuthorizer
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref ApiGateway
+      ProviderARNs: 
+        - !Ref CognitoArn
+
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+      Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !Ref CognitoArn
+            Identity:
+              Header: Authorization
+
+  approvalGroupCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupUpdateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup
+      Method: PUT
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupReadApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupEmailCreateApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup/email
+      Method: POST
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupEmailReadApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup/email
+      Method: GET
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+  approvalGroupEmailDeleteApi:
+    Type: Api
+    Properties:
+      RestApiId: !Ref ApiGateway
+      Path: /tim/approvalgroup/email
+      Method: DELETE
+      Auth:
+        Authorizer: CognitoAuthorizer
+
+
+  approvalGroupCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment: 
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:  
+        PutActionByApproval:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup
+            Method: POST
+
+
+  approvalGroupUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup
+            Method: PUT
+
+
+  approvalGroupReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupRead.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupReadEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  approvalGroupDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  approvalGroupEmailCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupEmailCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupEmailCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup/email
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  approvalGroupEmailReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupEmailRead.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupEmailReadEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup/email
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  approvalGroupEmailDeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupEmailDelete.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Sub '{{resolve:ssm:/tim-db-host:1}}'
+          DB_USER: !Sub '{{resolve:ssm:/tim-db-user:1}}'
+          DB_PASS: !Sub '{{resolve:ssm:/tim-db-pass:1}}'
+          DB_NAME: !Sub '{{resolve:ssm:/tim-db-name:1}}'
+          DB_PORT: !Sub '{{resolve:ssm:/tim-db-port:1}}'
+      Events:
+        approvalGroupEmailDeleteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvalgroup/email
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+
+Outputs:
+  ApiURL:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/"
+  DatabaseEndpoint:
+    Description: "Public endpoint for the RDS database"
+    Value: !GetAtt TIMV1Database.Endpoint.Address
+

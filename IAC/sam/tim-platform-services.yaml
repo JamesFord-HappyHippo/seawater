@@ -1,0 +1,1304 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: TIM Platform Services - Core HR and Workforce Management Platform
+
+Parameters:
+  TIMBucketName:
+    Type: String
+    Default: tim-dev-lambda
+    Description: S3 bucket containing Lambda deployment packages
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: TIMdev
+  CognitoArn:
+    Type: String  
+    Default: arn:aws:cognito-idp:us-east-2:532595801838:userpool/us-east-2_oWj5l1j6m
+    Description: Cognito User Pool ARN for authentication
+  myDBArn:
+    Type: String  
+    Default: arn:aws:rds:us-east-2:532595801838:db:happy2
+    Description: RDS Database ARN
+  tim4pass:
+    Type: String
+    Default: 123_FUtime
+    Description: Database password
+  timport:
+    Type: String
+    Default: 5432
+    Description: Database port
+  timname:
+    Type: String
+    Default: TIM
+    Description: Database name
+  timhost:
+    Type: String
+    Default: happy2.cwkfm0ctmqb3.us-east-2.rds.amazonaws.com
+    Description: Database hostname
+  timuser:
+    Type: String
+    Default: postgres
+    Description: Database username
+
+Globals:
+  Function:
+    Handler: index.handler
+    Runtime: nodejs18.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        DB_HOST: !Ref timhost
+        DB_USER: !Ref timuser
+        DB_PASS: !Ref tim4pass
+        DB_NAME: !Ref timname
+        DB_PORT: !Ref timport
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+
+Resources:
+  # IAM Role for Lambda Functions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Policies:
+        - PolicyName: LambdaVPCAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ec2:*NetworkInterface*
+              Resource: '*'
+        - PolicyName: RDSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+              Resource: arn:aws:rds:us-east-2:943677585228:db:happyv1sandbox2
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !Ref CognitoArn
+            Identity:
+              Header: Authorization
+
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties: 
+      Type: COGNITO_USER_POOLS
+      Name: CognitoUserPoolAuthorizer
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref ApiGateway
+      ProviderARNs: 
+        - !Ref CognitoArn
+
+  # =====================================================
+  # CLIENT MANAGEMENT SERVICES
+  # =====================================================
+  
+  clientsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: clientsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetClients:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateClient:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateClient:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteClient:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  companiesService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: companiesService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetCompanies:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/companies
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateCompany:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/companies
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateCompany:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/companies
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteCompany:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/companies
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  clientCompaniesService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: clientCompaniesService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetClientCompanies:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients/companies
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateClientCompany:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients/companies
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateClientCompany:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients/companies
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteClientCompany:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/clients/companies
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # =====================================================
+  # USER MANAGEMENT SERVICES
+  # =====================================================
+  
+  usersService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: usersService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetUsers:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/users
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/users
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/users
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/users
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  userEntitlementsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: userEntitlementsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetEntitlements:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/users/entitlements
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateEntitlement:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/users/entitlements
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateEntitlement:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/users/entitlements
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteEntitlement:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/users/entitlements
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # =====================================================
+  # ORGANIZATIONAL STRUCTURE SERVICES
+  # =====================================================
+  
+  organizationService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: organizationService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetOrgStructure:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/organization
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  departmentsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: departmentsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetDepartments:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/departments
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateDepartment:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/departments
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateDepartment:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/departments
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteDepartment:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/departments
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  jobsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: jobsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetJobs:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/jobs
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/jobs
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/jobs
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/jobs
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  locationsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: locationsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetLocations:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/locations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateLocation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/locations
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateLocation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/locations
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteLocation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/locations
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # =====================================================
+  # EMPLOYEE MANAGEMENT SERVICES
+  # =====================================================
+  
+  employeesService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: employeesService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetEmployees:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/employees
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateEmployee:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/employees
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateEmployee:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/employees
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteEmployee:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/employees
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  dataLoadService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: dataLoadService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        LoadCSV:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/data/load/csv
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        LoadJSON:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/data/load/json
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetLoadStatus:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/data/load/status
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        ProcessChanges:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/data/load/process
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # =====================================================
+  # WORKFLOW AND APPROVAL SERVICES
+  # =====================================================
+  
+  approvalGroupsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: approvalGroupsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetApprovalGroups:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvals/groups
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateApprovalGroup:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvals/groups
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateApprovalGroup:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvals/groups
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteApprovalGroup:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/approvals/groups
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  workflowActionsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: workflowActionsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        InitiateAction:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/actions/initiate
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetPendingActions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/actions/pending
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetCompletedActions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/actions/completed
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        ApproveAction:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/actions/approve
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        RejectAction:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/actions/reject
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetActionStats:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/actions/stats
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  workflowConfigService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: workflowConfigService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetActionConfigs:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/config/actions
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateActionConfig:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/config/actions
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateActionConfig:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/config/actions
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteActionConfig:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/config/actions
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetApprovalConfigs:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/config/approvals
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateApprovalConfig:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/config/approvals
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateApprovalConfig:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/config/approvals
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteApprovalConfig:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/config/approvals
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  agentTriggersService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: agentTriggersService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetAgentTriggers:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/agent-triggers
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateAgentTrigger:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/agent-triggers
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateAgentTrigger:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/agent-triggers
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteAgentTrigger:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/agent-triggers
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CheckTriggers:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/agent-triggers/check
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # =====================================================
+  # ANALYTICS AND REPORTING SERVICES
+  # =====================================================
+  
+  wageAnalyticsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: wageAnalyticsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetCompanyWageAnalysis:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/wages/company
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetDepartmentWageAnalysis:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/wages/department
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetJobWageAnalysis:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/wages/job
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetLocationWageAnalysis:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/wages/location
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  attritionAnalyticsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: attritionAnalyticsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetCompanyAttrition:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/attrition/company
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetDepartmentAttrition:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/attrition/department
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetJobAttrition:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/attrition/job
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetLocationAttrition:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/attrition/location
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetAttritionCandidates:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/attrition/candidates
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  tenureAnalyticsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: tenureAnalyticsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetCompanyTenure:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/tenure/company
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetDepartmentTenure:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/tenure/department
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetJobTenure:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/tenure/job
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetLocationTenure:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/tenure/location
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  workforcePlanningService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: workforcePlanningService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetWorkforcePlan:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/workforce/plan
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetBackfillPriorities:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/workforce/backfill-priorities
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # =====================================================
+  # PERFORMANCE MANAGEMENT SERVICES
+  # =====================================================
+  
+  performanceEvaluationService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: performanceEvaluationService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetEvaluations:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/evaluations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateEvaluation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/evaluations
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateEvaluation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/evaluations
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteEvaluation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/evaluations
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  performanceMetricsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: performanceMetricsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetCompanyMetrics:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/metrics/company
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetClientMetrics:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/metrics/client
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  riskAnalysisService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: riskAnalysisService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetRegrettableLoss:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/risk/regrettable
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetRiskTrends:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/risk/trends
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  careerDevelopmentService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: careerDevelopmentService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetCareerGuidance:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/career/guidance
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetCareerRecommendations:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/performance/career/recommendations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  managerService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: managerService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CreateAssignment:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/managers/assignments
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CalculateScore:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/managers/scores
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetScoreboard:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/managers/scoreboard
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # =====================================================
+  # COMMUNICATION SERVICES
+  # =====================================================
+  
+  emailService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: emailService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        SendEmail:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/send
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        SendRejectionEmail:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/send-rejection
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        GetEmails:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateEmail:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateEmail:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteEmail:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+        LoadFeedback:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/feedback
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  emailTemplatesService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: emailTemplatesService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetTemplates:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/templates
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateTemplate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/templates
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateTemplate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/templates
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteTemplate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/templates
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # =====================================================
+  # SYSTEM MONITORING SERVICES
+  # =====================================================
+  
+  alertsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: alertsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetAlerts:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/system/alerts
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  eventAnalyticsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: eventAnalyticsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetEvents:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/system/events
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # =====================================================
+  # SPECIALIZED FEATURES
+  # =====================================================
+  
+  criticalJobsService:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: criticalJobsService_js.zip
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetCriticalJobs:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/jobs/critical
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        CreateCriticalJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/jobs/critical
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        UpdateCriticalJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/jobs/critical
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        DeleteCriticalJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/jobs/critical
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+Outputs:
+  ApiURL:
+    Description: 'URL of the TIM Platform API Gateway'
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/'
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"
+  
+  ApiGatewayId:
+    Description: 'API Gateway ID'
+    Value: !Ref ApiGateway
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiGatewayId"

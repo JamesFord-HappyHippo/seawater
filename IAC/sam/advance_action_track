@@ -1,0 +1,34 @@
+CREATE OR REPLACE PROCEDURE public.advance_action_track(
+    _company_id VARCHAR,
+    _action_guid VARCHAR,
+    _updated_approval_step INT,
+    _approval_notes JSON,
+    _employee_id VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Update the current step and notes
+    UPDATE public."Action_Track"
+    SET "Approval_Step" = _updated_approval_step,
+        "Approval_Step_Date" = NOW(),
+        "Approval_Notes" = COALESCE("Approval_Notes", '{}')::jsonb || _approval_notes::jsonb
+    WHERE "Company_ID" = _company_id AND "Action_GUID" = _action_guid;
+
+    -- Set the next step
+    UPDATE public."Action_Track"
+    SET "Next_Step" = (
+            SELECT COALESCE(MIN("Approval_Group_ID"), 'END')
+            FROM public."Approval_Groups"
+            WHERE "Company_ID" = _company_id AND "Action_ID" = public."Action_Track"."Action_ID"
+                AND "Approval_Group_ID" > _updated_approval_step
+        )
+    WHERE "Company_ID" = _company_id AND "Action_GUID" = _action_guid;
+
+    -- Set the completion flag and date if the next step is 'END'
+    UPDATE public."Action_Track"
+    SET "Completed" = TRUE,
+        "Completion_Date" = NOW()
+    WHERE "Company_ID" = _company_id AND "Action_GUID" = _action_guid AND "Next_Step" = 'END';
+END;
+$$;

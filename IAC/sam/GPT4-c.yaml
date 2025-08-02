@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  LambdaBucketName:
+    Type: String
+    Default: tim-sb2-lambda
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: TIM
+  CognitoArn:
+    Type: String  
+    Default: arn:aws:cognito-idp:us-east-2:943677585228:userpool/us-east-2_7F0LoGK72
+
+Globals:
+  Function:
+    Handler: index.handler
+    Runtime: nodejs18.x
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole 
+        - arn:aws:iam::aws:policy/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Policies:
+        - PolicyName: LambdaVPCAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ec2:*NetworkInterface*
+              Resource: '*'
+        - PolicyName: RDSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+              Resource: !Sub arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${TIMV1Database}
+        - PolicyName: AccessSpecificSSMParameters
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-host
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-user
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-pass
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-name
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-port
+        - PolicyName: Logging
+          PolicyDocument:
+            Version: '2012-10-17' 
+            Statement:
+            - Effect: Allow
+              Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              Resource: arn:aws:logs:*:*:*
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+
+  LambdaSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: LambdaSG
+      VpcId: !Ref VPC
+      GroupDescription: Security Group for Lambda Functions
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: DbSecurityGroup
+      VpcId: !Ref VPC
+      GroupDescription: Security Group for RDS Database
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '5432'
+          ToPort: '5432'
+          SourceSecurityGroupId: !Ref LambdaSG
+        - IpProtocol: tcp
+          FromPort: '5432'
+          ToPort: '5432'
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+
+  DBSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: 'Subnet group for RDS instance'
+      SubnetIds: 
+        - !Ref PrivateSubnet
+
+  TIMV1Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 20
+      DBInstanceClass: db.t2.micro
+      PubliclyAccessible: true
+      Engine: postgres
+      DBName:  '{{resolve:ssm-secure:tim-db-name}}'
+      MasterUsername:  '{{resolve:ssm-secure:tim-db-user}}'
+      MasterUserPassword:  '{{resolve:ssm-secure:tim-db-pass}}'
+      VPCSecurityGroups:
+        - !Ref DbSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+
+  DatabaseHostParameter:
+    Type: 'AWS::SSM::Parameter'
+    Properties:
+      Name: 'tim-db-host'
+      Type: 'String'
+      Value: !GetAtt TIMV1Database.Endpoint.Address
+
+
+  ApiGateway:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: !Ref AppName
+      Description: An API Gateway for TIM application
+      FailOnWarnings: 'true'
+
+  ApiGatewayDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: prod
+
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties: 
+      Type: COGNITO_USER_POOLS
+      Name: CognitoUserPoolAuthorizer
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref ApiGateway
+      ProviderARNs:
+        - !Ref CognitoArn
+
+
+  approvalGroupCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment: 
+        Variables:
+          DB_HOST:  '{{resolve:ssm-secure:tim-db-host}}'
+          DB_USER:  '{{resolve:ssm-secure:tim-db-user}}'
+          DB_PASS:  '{{resolve:ssm-secure:tim-db-pass}}'
+          DB_NAME:  '{{resolve:ssm-secure:tim-db-name}}'
+          DB_PORT:  '{{resolve:ssm-secure:tim-db-port}}'
+      Events:
+        CreateEvent:
+          Type: Api
+          Properties:
+            Path: /tim/approvalgroup
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: !Ref CognitoAuthorizer
+
+  approvalGroupUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref LambdaBucketName
+        Key: approvalGroupUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST:  '{{resolve:ssm-secure:tim-db-host}}'
+          DB_USER:  '{{resolve:ssm-secure:tim-db-user}}'
+          DB_PASS:  '{{resolve:ssm-secure:tim-db-pass}}'
+          DB_NAME:  '{{resolve:ssm-secure:tim-db-name}}'
+          DB_PORT:  '{{resolve:ssm-secure:tim-db-port}}'
+      Events:
+        UpdateEvent:
+          Type: Api
+          Properties:
+            Path: /tim/approvalgroup
+            Method: PUT
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: !Ref CognitoAuthorizer
+
+Outputs:
+  ApiURL:
+    Description: 'URL of the service endpoint'
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/'

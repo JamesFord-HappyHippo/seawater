@@ -1,0 +1,314 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  TIMBucketName:
+    Type: String
+    Default: tim-sb2-lambda
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: TIM
+  CognitoArn:
+    Type: String  
+    Default: arn:aws:cognito-idp:us-east-2:943677585228:userpool/us-east-2_7F0LoGK72
+  myDBArn:
+    Type: String  
+    Default: arn:aws:rds:us-east-2:943677585228:db:happyv1sandbox2
+  tim4pass:
+    Type: String
+    Default: 123_FUtime
+  timport:
+    Type: String
+    Default: 5432
+  timname:
+    Type: String
+    Default: TIM
+  timhost:
+    Type: String
+    Default: happyv1sandbox2.co9k0hgge84x.us-east-2.rds.amazonaws.com
+  timuser:
+    Type: String
+    Default: postgres
+
+Globals:
+  Function:
+    Handler: index.handler
+    Runtime: nodejs18.x
+  Api:
+    Cors:
+      AllowMethods: "'*'"
+      AllowHeaders: "'*'"
+      AllowOrigin: "'*'"
+
+Resources:
+ 
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: ClarityVPC
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: false
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      MapPublicIpOnLaunch: false
+
+  LambdaSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: LambdaSG
+      VpcId: !Ref VPC
+      GroupDescription: Security Group for Lambda Functions
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: DbSecurityGroup
+      VpcId: !Ref VPC
+      GroupDescription: Security Group for RDS Database
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '5432' # Port for PostgreSQL
+          ToPort: '5432'
+          SourceSecurityGroupId: !Ref LambdaSG
+        - IpProtocol: tcp
+          FromPort: '5432'
+          ToPort: '5432'
+          CidrIp: 0.0.0.0/0 # Allows all IP addresses
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+
+  DBSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: 'Subnet group for RDS instance'
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      MapPublicIpOnLaunch: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      AllocationId: !GetAtt EIP.AllocationId
+
+  EIP:
+    Type: AWS::EC2::EIP
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Policies:
+        - PolicyName: LambdaVPCAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ec2:*NetworkInterface*
+              Resource: '*'
+        - PolicyName: RDSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+              Resource: arn:aws:rds:us-east-2:943677585228:db:happyv1sandbox2
+        - PolicyName: AccessSpecificSSMParameters
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-host
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-user
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-pass
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-name
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/tim-db-port
+
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: arn:aws:cognito-idp:us-east-2:943677585228:userpool/us-east-2_7F0LoGK72
+            Identity:
+              Header: Authorization
+
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties: 
+      Type: COGNITO_USER_POOLS
+      Name: CognitoUserPoolAuthorizer
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref ApiGateway
+      ProviderARNs: 
+        - arn:aws:cognito-idp:us-east-2:943677585228:userpool/us-east-2_7F0LoGK72
+
+  approvalGroupCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: approvalGroupCreate_js.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment: 
+        Variables:
+          DB_HOST:  !Ref timhost
+          DB_USER:  !Ref timuser
+          DB_PASS:  !Ref tim4pass
+          DB_NAME:  !Ref timname
+          DB_PORT:  !Ref timport
+      Events:
+        CreateEvent:
+          Type: Api
+          Properties:
+            Path: /tim/approvalgroup
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  approvalGroupUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: approvalGroupUpdate_js.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSG
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST:  !Ref timhost
+          DB_USER:  !Ref timuser
+          DB_PASS:  !Ref tim4pass
+          DB_NAME:  !Ref timname
+          DB_PORT:  !Ref timport
+      Events:
+        UpdateEvent:
+          Type: Api
+
+          Properties:
+            Path: /tim/approvalgroup
+            Method: PUT
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+Outputs:
+  ApiURL:
+    Description: 'URL of the service endpoint'
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/'

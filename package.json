@@ -1,0 +1,35 @@
+{
+  "name": "tim-combo",
+  "version": "1.0.0",
+  "scripts": {
+    "build:ci": "node concat_ci.js",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:callisto": "playwright test tests/callisto-integration-platform.spec.ts",
+    "test:mapping": "playwright test tests/callisto-integration-mapping.spec.ts",
+    "test:lifecycle": "playwright test tests/callisto-integration-lifecycle.spec.ts",
+    "test:certificates": "playwright test tests/callisto-certificate-management.spec.ts",
+    "test:overrides-email": "playwright test tests/callisto-client-overrides-email.spec.ts",
+    "test:core-functions": "playwright test tests/callisto-core-happyhippo-functions.spec.ts",
+    "test:integration-suite": "playwright test tests/callisto-*.spec.ts",
+    "test:live-system": "playwright test tests/live-system-integration.spec.ts",
+    "test:database": "playwright test tests/database-integration.spec.ts",
+    "test:all-callisto": "playwright test tests/callisto-*.spec.ts tests/live-system-integration.spec.ts tests/database-integration.spec.ts",
+    "test:live-only": "playwright test tests/live-system-integration.spec.ts tests/database-integration.spec.ts",
+    "test:debug": "playwright test --debug",
+    "test:load-data": "node db/test_data/run_load_callisto_integration_examples.js",
+    "test:setup": "mkdir -p test-results/screenshots"
+  },
+  "dependencies": {
+    "@types/react-table": "^7.7.20",
+    "js-yaml": "^4.1.0",
+    "pg": "^8.16.0",
+    "react-table": "^7.8.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.10.0"
+  }
+}

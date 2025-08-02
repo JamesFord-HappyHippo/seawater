@@ -1,0 +1,779 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Streamlined CALLISTO/TimeBridge Integration Platform - Post-Cleanup'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  TIMBucketName:
+    Type: String
+    Description: S3 bucket containing Lambda code
+  timhost:
+    Type: String
+    Description: Database host
+  timuser:
+    Type: String
+    Description: Database user
+  tim4pass:
+    Type: String
+    Description: Database password
+    NoEcho: true
+  timname:
+    Type: String
+    Description: Database name
+  timport:
+    Type: String
+    Description: Database port
+    Default: "5432"
+
+Resources:
+  # ===== IAM ROLE =====
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonRDSDataFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+  # ===== API GATEWAY =====
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors:
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*'
+
+  # ===== CORE INTEGRATION CRUD =====
+  callistoCreateIntegrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoCreateIntegration_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        CreateEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/integration
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoListIntegrationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoListIntegrations_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ListEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/integration
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoUpdateIntegrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoUpdateIntegration_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        UpdateEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/integration
+            Method: PUT
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoDeleteIntegrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoDeleteIntegration_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        DeleteEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/integration
+            Method: DELETE
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoGetClientDashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoGetClientDashboard_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        DashboardEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/integration/dashboard
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # ===== NEW MAPPING-DRIVEN SYSTEM =====
+  callistoCreateMappingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoCreateMapping_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 120
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        CreateEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/mapping
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoExecuteIntegrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoExecuteIntegration_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 300
+      MemorySize: 1024
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ExecuteEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/integration/execute
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # ===== CERTIFICATE MANAGEMENT =====
+  callistoUploadCertificateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoUploadCertificate_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        UploadEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/certificate
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoListCertificatesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoListCertificates_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ListEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/certificate
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoUpdateCertificateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoUpdateCertificate_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        UpdateEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/certificate
+            Method: PUT
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoDeleteCertificateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoDeleteCertificate_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        DeleteEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/certificate
+            Method: DELETE
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoCheckCertificateExpirationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoCheckCertificateExpirations_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ScheduleEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(24 hours)
+
+  # ===== MONITORING & ALERTS =====
+  callistoGetHealthMetricsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoGetHealthMetrics_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        HealthEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/health/metrics
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoGetCertificateAlertsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoGetCertificateAlerts_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        AlertEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/alert/certificate
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoAcknowledgeAlertFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoAcknowledgeAlert_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        AcknowledgeEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/alert/acknowledge
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoResolveAlertFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoResolveAlert_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ResolveEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/alert/resolve
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # ===== SCHEDULE MANAGEMENT =====
+  callistoManageScheduleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoManageSchedule_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ManageEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/schedule
+            Method: PUT
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoManageECSScheduleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoManageECSSchedule_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ECSEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/schedule/ecs
+            Method: PUT
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoScheduleListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoScheduleList_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ListEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/schedule
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # ===== SPECIALIZED FUNCTIONS =====
+  callistoGenerateJWTTokenFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoGenerateJWTToken_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        TokenEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/auth/jwt
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoGetPendingActionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoGetPendingActions_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        PendingEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/action/pending
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoGetNotificationCountFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoGetNotificationCount_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        CountEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/notification/count
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoProcessResponseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoProcessResponse_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ProcessEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/response
+            Method: POST
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # ===== TEMPLATE MANAGEMENT =====
+  callistoListTemplatesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoListTemplates_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ListEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/template
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  callistoManageTemplateOverridesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoManageTemplateOverrides_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        OverrideEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/template/override
+            Method: PUT
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # ===== ERROR MANAGEMENT =====
+  callistoErrorLogsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: callistoErrorLogs_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ErrorEvent:
+          Type: Api
+          Properties:
+            Path: /callisto/log/error
+            Method: GET
+            RestApiId: !Ref ApiGateway
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # ===== TIMEBRIDGE INTEGRATION =====
+  timebridgeScheduleSyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: timebridgeScheduleSync_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 300
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        ScheduleEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(12 hours)
+
+  timebridgeDataSyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: timebridgeDataSync_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 600
+      MemorySize: 1024
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        DataEvent:
+          Type: Schedule
+          Properties:
+            Schedule: rate(12 hours)
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway URL for the CALLISTO/TimeBridge integration platform
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiGatewayUrl'
+
+  IntegrationFunctionCount:
+    Description: Number of integration functions deployed
+    Value: 26
+
+  StreamlinedArchitecture:
+    Description: Streamlined architecture without session complexity
+    Value: 'Direct mapping-driven execution with Integration_Track monitoring'

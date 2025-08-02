@@ -1,0 +1,1208 @@
+# TIM Platform Extensions
+# This file extends the core lambda_with_auth.yaml with additional platform services
+# Can be safely merged back into the main deployment without conflicts
+
+# =====================================================
+# ADDITIONAL PLATFORM SERVICES EXTENSION
+# =====================================================
+
+# NOTE: This file is designed to be merged with the existing lambda_with_auth.yaml
+# All functions here use new paths that don't conflict with existing endpoints
+
+# Additional Analytics Services
+  workforceAnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: workforceAnalytics_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        workforceAnalyticsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/workforce
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Consolidated Reporting Services  
+  reportingDashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: reportingDashboard_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        reportingDashboardEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/reports/dashboard
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Enhanced Search and Filter Services
+  searchServicesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: searchServices_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        searchEmployeesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/search/employees
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        searchDepartmentsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/search/departments
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        searchJobsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/search/jobs
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Bulk Operations Service
+  bulkOperationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: bulkOperations_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        bulkUpdateEmployeesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/bulk/employees
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        bulkCreateDepartmentsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/bulk/departments
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# System Health and Monitoring
+  systemHealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: systemHealth_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        systemHealthEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/system/health
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        systemMetricsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/system/metrics
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Advanced Workflow Services
+  workflowTemplatesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: workflowTemplates_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getWorkflowTemplatesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/templates
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        createWorkflowTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/templates
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updateWorkflowTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/templates
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        deleteWorkflowTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/templates
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Data Export Services
+  dataExportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: dataExport_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        exportEmployeesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/export/employees
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        exportReportsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/export/reports
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        exportAnalyticsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/export/analytics
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Notification Services
+  notificationServicesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: notificationServices_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getNotificationsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/notifications
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        sendNotificationEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/notifications
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        markReadEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/notifications/read
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Integration Platform Services
+  integrationHubFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: integrationHub_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getIntegrationsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        createIntegrationEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        testIntegrationEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/test
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Audit and Compliance Services
+  auditServicesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: auditServices_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getAuditLogsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/audit/logs
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getComplianceReportEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/audit/compliance
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        generateAuditReportEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/audit/report
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Advanced Analytics Platform
+  analyticsEngineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: analyticsEngine_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        customAnalyticsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/custom
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        trendAnalysisEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/trends
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        predictiveAnalyticsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/analytics/predictions
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Configuration Management
+  configurationManagerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: configurationManager_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getSystemConfigEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/system
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updateSystemConfigEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/system
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getFeatureFlagsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/features
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updateFeatureFlagsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/config/features
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Certificate Management Services
+  certificateManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: certificateManagement_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        uploadCertificateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/certificate/upload
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getCertificatesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/certificate
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        renewCertificateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/certificate/renew
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        autoRenewalSetupEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/certificate/auto-renewal
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Template Lifecycle Management
+  templateLifecycleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: templateLifecycle_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/templates/lifecycle
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getTemplateVersionsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/templates/versions
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        promoteTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/templates/promote
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        archiveTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/templates/archive
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Integration Template Builder
+  integrationTemplateBuilderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: integrationTemplateBuilder_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createIntegrationTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/templates/integration
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getIntegrationTemplatesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/templates/integration
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updateIntegrationTemplateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/templates/integration
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getStandardTemplatesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/templates/standard
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Field Mapping Services
+  fieldMappingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: fieldMapping_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createFieldMappingEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/field-mapping
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getFieldMappingsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/field-mapping
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updateFieldMappingEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/field-mapping
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        validateMappingEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/field-mapping/validate
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Transformation Rules Engine
+  transformationRulesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: transformationRules_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createTransformationRuleEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/transformation-rules
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getTransformationRulesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/transformation-rules
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        testTransformationEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/transformation-rules/test
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Validation Logic Engine
+  validationLogicFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: validationLogic_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createValidationRuleEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/validation-rules
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getValidationRulesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/validation-rules
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        validateDataEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integration/validation-rules/validate
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# API Keys Management
+  apiKeysManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: apiKeysManagement_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createApiKeyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/apikeys
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getApiKeysEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/apikeys
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        rotateApiKeyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/apikeys/rotate
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        revokeApiKeyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/apikeys/revoke
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Security Settings Management
+  securitySettingsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: securitySettings_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getSecuritySettingsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/security
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updateSecuritySettingsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/security
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getPasswordPolicyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/security/password
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updatePasswordPolicyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/security/password
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Test Framework Services
+  testFrameworkFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: testFramework_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createTestSuiteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/testing/test-suites
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        runTestSuiteEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/testing/test-suites/run
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getTestResultsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/testing/results
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        generateTestDataEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/testing/generate-data
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Version Control Services
+  versionControlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: versionControl_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createVersionEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/version-control/versions
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getVersionHistoryEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/version-control/history
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        compareVersionsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/version-control/compare
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        rollbackVersionEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/version-control/rollback
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Client Override Management
+  clientOverrideFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: clientOverride_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createClientOverrideEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/client-overrides
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getClientOverridesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/client-overrides
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updateClientOverrideEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/client-overrides
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        deleteClientOverrideEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/client-overrides
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Advanced Email Services
+  advancedEmailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: advancedEmail_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        testEmailConfigEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/test-config
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getEmailConfigEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/config
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updateEmailConfigEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/config
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getEmailAnalyticsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/email/analytics
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Data Quality and Governance
+  dataQualityFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: dataQuality_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        runDataQualityCheckEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/data-quality/check
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getDataQualityReportEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/data-quality/report
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        createDataGovernanceRuleEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/data-governance/rules
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getDataLineageEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/data-governance/lineage
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Workflow Sequence Management
+  workflowSequenceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: workflowSequence_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        createWorkflowSequenceEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/sequences
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getWorkflowSequencesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/sequences
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        updateWorkflowSequenceEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/sequences
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+        testWorkflowSequenceEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/workflow/sequences/test
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Performance Monitoring
+  performanceMonitoringFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: performanceMonitoring_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getPerformanceMetricsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/monitoring/performance
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        getIntegrationMetricsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/monitoring/integrations
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        setPerformanceAlertsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/monitoring/alerts
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer

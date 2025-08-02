@@ -1,0 +1,11 @@
+version = 0.1
+[Demo.deploy.parameters]
+stack_name = "ClarityV1"
+resolve_s3 = true
+s3_prefix = "ClarityV1"
+region = "us-east-2"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+disable_rollback = true
+parameter_overrides = "TIMBucketName=\"tim-sb2-lambda\" AppName=\"TIM\" CognitoArn=\"arn:aws:cognito-idp:us-east-2:943677585228:userpool/us-east-2_7F0LoGK72\" myDBArn=\"arn:aws:rds:us-east-2:943677585228:db:happyv1\" tim4pass=\"123_FUtime\" timport=\"5432\" timname=\"TIM\" timhost=\"happyv1.co9k0hgge84x.us-east-2.rds.amazonaws.com" timuser=\"postgres\""
+image_repositories = []

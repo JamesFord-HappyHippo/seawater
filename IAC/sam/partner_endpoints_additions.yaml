@@ -1,0 +1,92 @@
+# Partner Endpoints IAC Additions for lambda_with_auth.yaml
+# Add these resources to the existing lambda_with_auth.yaml file in the Resources section
+
+# NOTE: The validation errors below are expected since this is an additions file. 
+# These references (TIMBucketName, LambdaExecutionRole, timhost, etc.) are defined in the main lambda_with_auth.yaml file.
+
+# NEW Partner Endpoints Functions (these are the main additions)
+  getPartnerEndpointsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: getPartnerEndpoints_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getPartnerEndpointsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/partner-endpoints
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  getPartnerListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: getPartnerList_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        getPartnerListEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/partner-list
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Additional Integration Platform Functions (only add if NOT already in main file)
+  manageTemplateOverridesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: manageTemplateOverrides_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        manageTemplateOverridesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/template-overrides
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# NOTE: The following functions are already defined in the main lambda_with_auth.yaml file:
+# - templateSchemaFunction
+# - suggestMappingsFunction  
+# - testConnectionFunction
+# - listTemplatesFunction
+# - createMappingFunction
+# - listMappingsFunction
+# 
+# Do NOT add these again to avoid duplicate function errors during deployment.

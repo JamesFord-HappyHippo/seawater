@@ -1,0 +1,257 @@
+# TimeBridge OAuth and Webhook Endpoints
+# These endpoints require different authentication schemes than Cognito
+
+# =====================================================
+# OAUTH CALLBACK ENDPOINTS - NO COGNITO AUTH REQUIRED
+# Supports both partner-specific URLs (for existing credentials) 
+# and unified callback URL (for future partners)
+# =====================================================
+
+  unifiedOAuthCallbackFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: oauthCallback_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30  # OAuth processing may take time
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+          BASE_URL: https://dev.happyhippo.ai  # For OAuth redirects
+      Events:
+        # NEW UNIFIED CALLBACK (for future partners)
+        unifiedOAuthCallbackEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/oauth/callback
+            Method: GET
+            Auth:
+              Authorizer: NONE  # External systems don't have Cognito tokens
+        
+        # ORIGINAL ADP CALLBACK (for existing test credentials)
+        adpOAuthCallbackEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/adp/oauth/callback
+            Method: GET
+            Auth:
+              Authorizer: NONE  # External systems don't have Cognito tokens
+        
+        # ORIGINAL QUICKBOOKS CALLBACK (for existing test credentials)
+        quickbooksOAuthCallbackEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/quickbooks/oauth/callback
+            Method: GET
+            Auth:
+              Authorizer: NONE  # External systems don't have Cognito tokens
+
+# =====================================================
+# QUICKBOOKS TIME WEBHOOK - NO COGNITO AUTH REQUIRED  
+# QuickBooks Time sends webhooks here for data changes
+# Authentication via X-QBT-Signature header validation
+# =====================================================
+
+  quickbooksTimeWebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: webhookReceiver_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60  # Webhook processing may take time
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        quickbooksTimeWebhookEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/webhook/qbt-import
+            Method: POST
+            Auth:
+              Authorizer: NONE  # Webhook validates X-QBT-Signature internally
+
+# =====================================================
+# ADP TIME ENTRY SUBMIT - COGNITO AUTH REQUIRED
+# Internal TimeBridge API call - requires authentication
+# =====================================================
+
+  adpTimeEntrySubmitFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: timeEntrySubmit_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60  # ADP API calls may take time
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        adpTimeEntrySubmitEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/adp/time-entries
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer  # Internal API requires auth
+
+# =====================================================
+# TIMEBRIDGE PROCESS PAYROLL - COGNITO AUTH REQUIRED
+# Internal TimeBridge processing - requires authentication  
+# =====================================================
+
+  timebridgeProcessPayrollFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: processPayroll_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 120  # Payroll processing may take longer
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        timebridgeProcessPayrollEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/timebridge/process
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer  # Internal API requires auth
+
+# =====================================================
+# QUICKBOOKS TIME EXTRACT - COGNITO AUTH REQUIRED
+# Internal TimeBridge API call - requires authentication
+# =====================================================
+
+  quickbooksTimeExtractFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: timeExtract_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60  # QB Time API calls may take time
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        quickbooksTimeExtractEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/quickbooks/extract
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer  # Internal API requires auth
+
+# =====================================================
+# EMPLOYEE MAPPING MANAGEMENT - COGNITO AUTH REQUIRED
+# TimeBridge employee mapping - requires authentication
+# =====================================================
+
+  employeeMappingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: employeeMapping_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        employeeMappingGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/employee-mapping
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        employeeMappingCreateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/employee-mapping
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+        employeeMappingUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/employee-mapping
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# =====================================================
+# FLSA OVERTIME CALCULATOR - COGNITO AUTH REQUIRED
+# TimeBridge overtime processing - requires authentication
+# =====================================================
+
+  flsaOvertimeCalculatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: flsaCalculator_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        flsaOvertimeCalculatorEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/flsa/calculate
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer  # Internal API requires auth

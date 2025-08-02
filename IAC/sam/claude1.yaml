@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Mappings:
+  VPCConfig:
+    CIDR: 10.0.0.0/16
+    Subnets:
+      - subnet1: 10.0.1.0/24
+      - subnet2: 10.0.2.0/24
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambdaBasicExecutionRole  
+      Policies:
+        - PolicyName: LambdaVPCAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+
+  LambdaSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Lambda ENIs to communicate with resources
+      VpcId: !Ref VPC
+
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      DefinitionBody:
+        # API defs
+  
+  ApprovalGroupCreateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: tim-dev-lambda
+        Key: approvalGroupCreate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds: !Ref LambdaSG
+        SubnetIds: !FindInMap [VPCConfig, Subnets, subnet1]
+      Role: !GetAtt LambdaExecutionRole
+      Environment: 
+        Variables:
+          DB_HOST: /tim-db-host
+          DB_USER: /tim-db-user
+          DB_PASS: /tim-db-pass
+          DB_NAME: /tim-db-name
+          DB_PORT: /tim-db-port
+      Events:  
+        PutActionByApproval:
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /tim/approvalgroup
+            Method: POST
+
+  ApprovalGroupUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: tim-dev-lambda
+        Key: actionGroupUpdate.zip
+      Handler: index.handler
+      VpcConfig:
+        SecurityGroupIds: !Ref LambdaSG
+        SubnetIds: !FindInMap [VPCConfig, Subnets, subnet1]
+      Role: !GetAtt LambdaExecutionRole
+      Environment: 
+        Variables:
+          DB_HOST: /tim-db-host
+          DB_USER: /tim-db-user
+          DB_PASS: /tim-db-pass
+          DB_NAME: /tim-db-name
+          DB_PORT: /tim-db-port
+      Events:  
+        PutActionByApproval:
+          Type: Api
+          Properties:
+            RestApiId: !Ref APIGateway
+            Path: /tim/approvalgroup
+            Method: PUT
+
+LambdaPermissionApprovalGroupCreateFunction:
+  Type: AWS::Lambda::Permission
+  Properties:
+    FunctionName: !Ref ApprovalGroupCreateFunction
+    Principal: apigateway.amazonaws.com
+    
+LambdaPermissionApprovalGroupUpdateFunction:
+  Type: AWS::Lambda::Permission  
+  Properties:
+    FunctionName: !Ref ApprovalGroupUpdateFunction
+    Principal: apigateway.amazonaws.com
+
+
+
+  Outputs:
+    ApiURL: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/"

@@ -1,0 +1,256 @@
+# TimeBridge Integration Lambda Functions IAC Definitions
+# Extension for merging into main lambda_with_auth.yaml file
+
+# Add these functions to the Resources section of lambda_with_auth.yaml:
+
+  # QuickBooks Time Extraction Function
+  timeExtractFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: timeExtract_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        quickBooksTimeExtractEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/quickbooks/time-extract
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # TimeBridge Payroll Processing Function
+  processPayrollFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: processPayroll_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        timeBridgeProcessPayrollEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/timebridge/process-payroll
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # ADP Time Entry Submit Function (for completeness)
+  timeEntrySubmitFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: timeEntrySubmit_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        adpTimeEntrySubmitEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/adp/time-entry-submit
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # QuickBooks OAuth Configuration Function
+  oauthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: oauth_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        quickBooksOAuthGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/quickbooks/oauth
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        quickBooksOAuthPostEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/quickbooks/oauth
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # TimeBridge Status Monitoring Function
+  statusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: status_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        timeBridgeStatusGetEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/timebridge/status
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        timeBridgeStatusGetCompanyEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/integrations/timebridge/status/{companyId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # TimeBridge Admin Enable Function
+  timebridgeEnableFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: timebridgeEnable_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        timeBridgeAdminEnableEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user/admin/timebridge/enable
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # TimeBridge Admin Disable Function
+  timebridgeDisableFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: timebridgeDisable_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        timeBridgeAdminDisableEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user/admin/timebridge/disable
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # TimeBridge Status Function
+  timebridgeStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: timebridgeAdminStatus_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        timeBridgeStatusClientsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user/admin/timebridge/status/clients
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        timeBridgeStatusCredentialsEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/user/admin/timebridge/status/credentials
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+# Outputs for reference by other stacks
+Outputs:
+  timeExtractFunctionArn:
+    Description: ARN of QuickBooks Time Extract Function
+    Value: !GetAtt timeExtractFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-timeExtractFunction"
+
+  processPayrollFunctionArn:
+    Description: ARN of TimeBridge Process Payroll Function
+    Value: !GetAtt processPayrollFunction.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-processPayrollFunction"
+
+  TimeBridgeApiEndpoints:
+    Description: TimeBridge API Endpoints
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/integrations/"
+    Export:
+      Name: !Sub "${AWS::StackName}-TimeBridgeApiEndpoints"

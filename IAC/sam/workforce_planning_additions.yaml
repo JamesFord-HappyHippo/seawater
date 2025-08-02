@@ -1,0 +1,108 @@
+# Workforce Planning Lambda Functions
+# Add these to the Resources section of lambda_with_auth.yaml
+
+  # Company Workforce Plan Function
+  companyWorkforcePlanFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: companyWorkforcePlan_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        companyWorkforcePlanEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/workforce-plan
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # Company Attrition Candidates Function
+  companyAttritionCandidatesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: companyAttritionCandidates_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        companyAttritionCandidatesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/attrition-candidates
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # Company Backfill Priorities Function
+  companyBackfillPrioritiesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: companyBackfillPriorities_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        companyBackfillPrioritiesEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/backfill-priorities
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  # Company Detail Update Function
+  # Note: There's already a companyUpdateFunction in the file, but it's for /tim/company
+  # This is specifically for company detail with workforce planning fields
+  companyDetailUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri:
+        Bucket: !Ref TIMBucketName
+        Key: companyDetailUpdate_js.zip
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DB_HOST: !Ref timhost
+          DB_USER: !Ref timuser
+          DB_PASS: !Ref tim4pass
+          DB_NAME: !Ref timname
+          DB_PORT: !Ref timport
+      Events:
+        companyDetailUpdateEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /tim/company/detail
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer

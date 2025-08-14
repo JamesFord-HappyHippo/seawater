@@ -1,0 +1,830 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Seawater Climate Risk Platform - Complete API Infrastructure'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment environment
+  
+  DatabaseConnectionString:
+    Type: String
+    Description: PostgreSQL connection string
+    NoEcho: true
+  
+  RedisConnectionString:
+    Type: String
+    Description: Redis connection string
+    NoEcho: true
+  
+  JWTSecret:
+    Type: String
+    Description: JWT signing secret
+    NoEcho: true
+  
+  MapboxAPIKey:
+    Type: String
+    Description: Mapbox API key for geocoding
+    NoEcho: true
+  
+  FirstStreetAPIKey:
+    Type: String
+    Description: First Street Foundation API key
+    NoEcho: true
+  
+  ClimateCheckAPIKey:
+    Type: String
+    Description: ClimateCheck API key
+    NoEcho: true
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Timeout: 30
+    MemorySize: 512
+    Tracing: Active
+    Environment:
+      Variables:
+        NODE_ENV: !Ref Environment
+        DATABASE_URL: !Ref DatabaseConnectionString
+        REDIS_URL: !Ref RedisConnectionString
+        JWT_SECRET: !Ref JWTSecret
+        MAPBOX_API_KEY: !Ref MapboxAPIKey
+        FIRSTSTREET_API_KEY: !Ref FirstStreetAPIKey
+        CLIMATECHECK_API_KEY: !Ref ClimateCheckAPIKey
+        FEMA_API_BASE: 'https://hazards.fema.gov/nri/api/v1'
+        BULK_PROCESSING_QUEUE: !Ref BulkProcessingQueue
+        BULK_RESULTS_BUCKET: !Ref BulkResultsBucket
+        LOG_LEVEL: info
+    VpcConfig:
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+    
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+      AllowHeaders: "'Content-Type,Authorization,X-API-Key,X-Request-ID'"
+      AllowOrigin: "'*'"
+      AllowCredentials: false
+    GatewayResponses:
+      DEFAULT_4xx:
+        ResponseParameters:
+          Headers:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization,X-API-Key'"
+      DEFAULT_5xx:
+        ResponseParameters:
+          Headers:
+            Access-Control-Allow-Origin: "'*'"
+            Access-Control-Allow-Headers: "'Content-Type,Authorization,X-API-Key'"
+
+Resources:
+  # ========================================
+  # API Gateway Configuration
+  # ========================================
+  
+  SeawaterAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'seawater-api-${Environment}'
+      StageName: v1
+      EndpointConfiguration:
+        Type: REGIONAL
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingRateLimit: 1000
+          ThrottlingBurstLimit: 2000
+          CachingEnabled: true
+          CacheTtlInSeconds: 300
+          CacheKeyParameters:
+            - method.request.querystring.address
+            - method.request.querystring.sources
+            - method.request.header.Authorization
+      CacheClusterEnabled: true
+      CacheClusterSize: '0.5'
+      Auth:
+        DefaultAuthorizer: JWTAuthorizer
+        Authorizers:
+          JWTAuthorizer:
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            Identity:
+              Headers:
+                - Authorization
+                - X-API-Key
+              ReauthorizeEvery: 3600
+      Tags:
+        Environment: !Ref Environment
+        Application: seawater-api
+
+  # ========================================
+  # Core Lambda Functions
+  # ========================================
+
+  # JWT Authorization Function
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-authorizer-${Environment}'
+      CodeUri: functions/authorizer/
+      Handler: index.handler
+      Runtime: nodejs18.x
+      Timeout: 10
+      MemorySize: 128
+      Description: JWT token validation and user authorization
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt DeadLetterQueue.Arn
+      Environment:
+        Variables:
+          JWT_SECRET: !Ref JWTSecret
+
+  # Risk Assessment Function
+  RiskAssessmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-risk-assessment-${Environment}'
+      CodeUri: functions/risk-assessment/
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 1024
+      ReservedConcurrencyLimit: 50
+      ProvisionedConcurrencyConfig:
+        ProvisionedConcurrencyMinCapacity: 5
+        ProvisionedConcurrencyMaxCapacity: 25
+      Environment:
+        Variables:
+          CACHE_TTL_SECONDS: '3600'
+          MAX_CACHE_SIZE_MB: '100'
+      Events:
+        GetPropertyRisk:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /properties/risk
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        CompareProperties:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /properties/compare
+            Method: post
+            Auth:
+              Authorizer: JWTAuthorizer
+        GetPropertyTrends:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /properties/trends/{address_hash}
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+
+  # Geocoding Function
+  GeocodingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-geocoding-${Environment}'
+      CodeUri: functions/geocoding/
+      Handler: index.handler
+      Timeout: 15
+      MemorySize: 256
+      Events:
+        PostGeocode:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /geocoding/address
+            Method: post
+            Auth:
+              Authorizer: JWTAuthorizer
+        GetReverseGeocode:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /geocoding/reverse
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+
+  # Geographic Services Function
+  GeographicServicesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-geographic-${Environment}'
+      CodeUri: functions/geographic/
+      Handler: index.handler
+      Timeout: 25
+      MemorySize: 512
+      Events:
+        GetNearbyProperties:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /properties/spatial/nearby
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        GetBoundaryData:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /geographic/boundaries/{type}/{identifier}
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        GetDisasterHistory:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /geographic/disasters/history
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+
+  # Professional Directory Function  
+  ProfessionalDirectoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-professionals-${Environment}'
+      CodeUri: functions/professionals/
+      Handler: index.handler
+      Timeout: 20
+      MemorySize: 384
+      Events:
+        SearchProfessionals:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professionals/search
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        GetProfessionalProfile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professionals/{professional_id}
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        ContactProfessional:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professionals/contact
+            Method: post
+            Auth:
+              Authorizer: JWTAuthorizer
+
+  # User Management Function
+  UserManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-users-${Environment}'
+      CodeUri: functions/users/
+      Handler: index.handler
+      Timeout: 15
+      MemorySize: 256
+      Events:
+        GetUserProfile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /users/profile
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        UpdateUserProfile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /users/profile
+            Method: put
+            Auth:
+              Authorizer: JWTAuthorizer
+        GetUserSubscription:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /users/subscription
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        GetUserUsage:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /users/usage
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+
+  # ========================================
+  # Professional API Functions
+  # ========================================
+
+  # Bulk Processing Function
+  BulkProcessingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-bulk-${Environment}'
+      CodeUri: functions/bulk-analysis/
+      Handler: index.handler
+      Timeout: 900  # 15 minutes for bulk operations
+      MemorySize: 1024
+      ReservedConcurrencyLimit: 10
+      Environment:
+        Variables:
+          MAX_BATCH_SIZE: '1000'
+          CHUNK_SIZE: '10'
+      Events:
+        InitiateBulkJob:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professional/bulk/risk-assessment
+            Method: post
+            Auth:
+              Authorizer: JWTAuthorizer
+        GetBulkJobStatus:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professional/bulk/jobs/{job_id}
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        ProcessBulkItems:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt BulkProcessingQueue.Arn
+            BatchSize: 1
+            MaximumBatchingWindowInSeconds: 5
+
+  # Report Generation Function
+  ReportGenerationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-reports-${Environment}'
+      CodeUri: functions/reports/
+      Handler: index.handler
+      Timeout: 120
+      MemorySize: 2048
+      Environment:
+        Variables:
+          REPORTS_BUCKET: !Ref ReportsBucket
+      Events:
+        GeneratePropertyReport:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professional/reports/property
+            Method: post
+            Auth:
+              Authorizer: JWTAuthorizer
+        ExportCSV:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professional/export/csv
+            Method: post
+            Auth:
+              Authorizer: JWTAuthorizer
+
+  # Webhook Management Function
+  WebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-webhooks-${Environment}'
+      CodeUri: functions/webhooks/
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 256
+      Events:
+        RegisterWebhook:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professional/webhooks
+            Method: post
+            Auth:
+              Authorizer: JWTAuthorizer
+        ListWebhooks:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professional/webhooks
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        DeleteWebhook:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /professional/webhooks/{webhook_id}
+            Method: delete
+            Auth:
+              Authorizer: JWTAuthorizer
+
+  # ========================================
+  # Data Source Integration Functions
+  # ========================================
+
+  # FEMA Data Sync Function
+  FEMADataSyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-fema-sync-${Environment}'
+      CodeUri: functions/data-sources/fema/
+      Handler: index.handler
+      Timeout: 900
+      MemorySize: 512
+      Events:
+        DailySync:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 6 * * ? *)'  # Daily at 6 AM UTC
+            Description: 'Daily FEMA data synchronization'
+            Enabled: true
+        ManualSync:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /data-sources/fema/sync
+            Method: post
+            Auth:
+              Authorizer: JWTAuthorizer
+
+  # Premium Data Sources Function
+  PremiumDataSourcesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'seawater-premium-data-${Environment}'
+      CodeUri: functions/data-sources/premium/
+      Handler: index.handler
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          FIRSTSTREET_RATE_LIMIT: '100'
+          CLIMATECHECK_RATE_LIMIT: '200'
+      Events:
+        GetFirstStreetData:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /data-sources/firststreet/risk-factor
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+        GetClimateCheckData:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterAPI
+            Path: /data-sources/climatecheck/risk
+            Method: get
+            Auth:
+              Authorizer: JWTAuthorizer
+
+  # ========================================
+  # Infrastructure Resources
+  # ========================================
+
+  # VPC Configuration
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'seawater-vpc-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'seawater-private-subnet-1-${Environment}'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'seawater-private-subnet-2-${Environment}'
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Seawater Lambda functions
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub 'seawater-lambda-sg-${Environment}'
+
+  # SQS Queue for Bulk Processing
+  BulkProcessingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'seawater-bulk-processing-${Environment}'
+      VisibilityTimeoutSeconds: 960  # 16 minutes (longer than Lambda timeout)
+      MessageRetentionPeriod: 1209600  # 14 days
+      ReceiveMessageWaitTimeSeconds: 20  # Long polling
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: seawater-api
+
+  # Dead Letter Queue
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'seawater-dlq-${Environment}'
+      MessageRetentionPeriod: 1209600  # 14 days
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: seawater-api
+
+  # S3 Buckets
+  BulkResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'seawater-bulk-results-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldResults
+            Status: Enabled
+            ExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'seawater-reports-${Environment}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldReports
+            Status: Enabled
+            ExpirationInDays: 90
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # ========================================
+  # IAM Roles and Policies
+  # ========================================
+
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'seawater-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: SeawaterAPIPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !GetAtt BulkProcessingQueue.Arn
+                  - !GetAtt DeadLetterQueue.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${BulkResultsBucket}/*'
+                  - !GetAtt BulkResultsBucket.Arn
+                  - !Sub '${ReportsBucket}/*'
+                  - !GetAtt ReportsBucket.Arn
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/seawater/${Environment}/*'
+
+  # ========================================
+  # CloudWatch Alarms and Monitoring
+  # ========================================
+
+  # API Gateway 4xx Error Alarm
+  APIGateway4xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'seawater-api-4xx-errors-${Environment}'
+      AlarmDescription: 'High rate of 4xx errors in API Gateway'
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub 'seawater-api-${Environment}'
+      AlarmActions:
+        - !Ref SNSAlarmTopic
+
+  # Lambda Error Rate Alarm
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'seawater-lambda-errors-${Environment}'
+      AlarmDescription: 'High error rate in Lambda functions'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref SNSAlarmTopic
+
+  # DLQ Message Alarm
+  DLQMessageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'seawater-dlq-messages-${Environment}'
+      AlarmDescription: 'Messages in Dead Letter Queue'
+      MetricName: ApproximateNumberOfVisibleMessages
+      Namespace: AWS/SQS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt DeadLetterQueue.QueueName
+      AlarmActions:
+        - !Ref SNSAlarmTopic
+
+  # SNS Topic for Alarms
+  SNSAlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'seawater-alarms-${Environment}'
+      DisplayName: !Sub 'Seawater API Alarms - ${Environment}'
+
+  # ========================================
+  # Custom Metrics and Dashboard
+  # ========================================
+
+  CloudWatchDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub 'Seawater-API-${Environment}'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ApiGateway", "Count", "ApiName", "seawater-api-${Environment}" ],
+                  [ ".", "Latency", ".", "." ],
+                  [ ".", "4XXError", ".", "." ],
+                  [ ".", "5XXError", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Gateway Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Duration", "FunctionName", "${RiskAssessmentFunction}" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Throttles", ".", "." ],
+                  [ ".", "Invocations", ".", "." ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Function Metrics",
+                "period": 300
+              }
+            }
+          ]
+        }
+
+Outputs:
+  ApiGatewayUrl:
+    Description: 'API Gateway endpoint URL'
+    Value: !Sub 'https://${SeawaterAPI}.execute-api.${AWS::Region}.amazonaws.com/v1'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+
+  ApiGatewayId:
+    Description: 'API Gateway ID'
+    Value: !Ref SeawaterAPI
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiId'
+
+  LambdaExecutionRoleArn:
+    Description: 'ARN of the Lambda execution role'
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaRoleArn'
+
+  BulkProcessingQueueUrl:
+    Description: 'URL of the bulk processing SQS queue'
+    Value: !Ref BulkProcessingQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-BulkQueueUrl'
+
+  BulkResultsBucketName:
+    Description: 'Name of the bulk results S3 bucket'
+    Value: !Ref BulkResultsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BulkBucket'
+
+  ReportsBucketName:
+    Description: 'Name of the reports S3 bucket'
+    Value: !Ref ReportsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ReportsBucket'

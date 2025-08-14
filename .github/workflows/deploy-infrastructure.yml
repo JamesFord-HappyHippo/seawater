@@ -1,0 +1,524 @@
+name: Deploy Seawater Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'IAC/**'
+      - 'src/**'
+      - '.github/workflows/deploy-infrastructure.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'IAC/**'
+      - 'src/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      force_deploy:
+        description: 'Force deployment even if no changes detected'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: seawater
+  SAM_CLI_TELEMETRY: 0
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      infrastructure-changed: ${{ steps.changes.outputs.infrastructure }}
+      lambda-changed: ${{ steps.changes.outputs.lambda }}
+      database-changed: ${{ steps.changes.outputs.database }}
+      monitoring-changed: ${{ steps.changes.outputs.monitoring }}
+      environment: ${{ steps.set-env.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect file changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            infrastructure:
+              - 'IAC/seawater-infrastructure*.yaml'
+              - 'IAC/parameters/**'
+              - 'IAC/samconfig.toml'
+            lambda:
+              - 'src/lambda/**'
+              - 'IAC/seawater-infrastructure*.yaml'
+            database:
+              - 'IAC/database/**'
+              - 'IAC/seawater-infrastructure*.yaml'
+            monitoring:
+              - 'IAC/monitoring/**'
+              - 'IAC/seawater-infrastructure*.yaml'
+
+      - name: Set deployment environment
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          fi
+
+  validate-templates:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.infrastructure-changed == 'true' || github.event.inputs.force_deploy == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install cfn-lint yamllint checkov
+          npm install -g aws-cdk-lib
+
+      - name: Lint CloudFormation templates
+        run: |
+          cfn-lint IAC/seawater-infrastructure*.yaml
+          cfn-lint IAC/security-policies.yaml
+          cfn-lint IAC/monitoring/*.yaml
+
+      - name: Lint YAML files
+        run: |
+          yamllint IAC/ -d '{extends: default, rules: {line-length: {max: 120}}}'
+
+      - name: Security scan with Checkov
+        run: |
+          checkov -f IAC/seawater-infrastructure.yaml --framework cloudformation
+          checkov -f IAC/security-policies.yaml --framework cloudformation
+
+      - name: Validate SAM templates
+        run: |
+          cd IAC
+          sam validate --template seawater-infrastructure.yaml
+          sam validate --template security-policies.yaml
+
+  test-lambda-functions:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.lambda-changed == 'true' || github.event.inputs.force_deploy == 'true'
+    strategy:
+      matrix:
+        function: [risk-aggregator, geographic-processor, fema-sync, premium-orchestrator]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: src/lambda/${{ matrix.function }}/package.json
+
+      - name: Install dependencies
+        run: |
+          cd src/lambda/${{ matrix.function }}
+          npm ci
+
+      - name: Run tests
+        run: |
+          cd src/lambda/${{ matrix.function }}
+          npm test
+
+      - name: Run linting
+        run: |
+          cd src/lambda/${{ matrix.function }}
+          npm run lint
+
+      - name: Security audit
+        run: |
+          cd src/lambda/${{ matrix.function }}
+          npm audit --audit-level=high
+
+  database-validation:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.database-changed == 'true' || github.event.inputs.force_deploy == 'true'
+    services:
+      postgres:
+        image: postgis/postgis:15-3.3
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: seawater_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test database initialization
+        run: |
+          PGPASSWORD=test_password psql -h localhost -U postgres -d seawater_test -f IAC/database/init-postgis.sql
+
+      - name: Validate database schema
+        run: |
+          PGPASSWORD=test_password psql -h localhost -U postgres -d seawater_test -c "
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = 'seawater' 
+            ORDER BY table_name;
+          "
+
+      - name: Test PostGIS functionality
+        run: |
+          PGPASSWORD=test_password psql -h localhost -U postgres -d seawater_test -c "
+            SELECT PostGIS_Version();
+            SELECT ST_Distance(ST_GeogFromText('POINT(-122.4194 37.7749)'), ST_GeogFromText('POINT(-74.0059 40.7128)'));
+          "
+
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, validate-templates, test-lambda-functions, database-validation]
+    if: |
+      always() &&
+      !failure() &&
+      !cancelled() &&
+      (needs.detect-changes.outputs.infrastructure-changed == 'true' || 
+       needs.detect-changes.outputs.lambda-changed == 'true' || 
+       github.event.inputs.force_deploy == 'true')
+    environment:
+      name: ${{ needs.detect-changes.outputs.environment }}
+      url: ${{ steps.deploy.outputs.api-url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Setup Node.js for Lambda functions
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build Lambda functions
+        run: |
+          for function_dir in src/lambda/*/; do
+            if [ -f "$function_dir/package.json" ]; then
+              echo "Building $(basename $function_dir)"
+              cd "$function_dir"
+              npm ci --production
+              cd - > /dev/null
+            fi
+          done
+
+      - name: Load environment parameters
+        id: params
+        run: |
+          ENV="${{ needs.detect-changes.outputs.environment }}"
+          echo "Deploying to environment: $ENV"
+          
+          # Load parameters from JSON file
+          if [ -f "IAC/parameters/${ENV}.json" ]; then
+            echo "Using parameters from IAC/parameters/${ENV}.json"
+            cat "IAC/parameters/${ENV}.json"
+          else
+            echo "Warning: No parameter file found for environment $ENV"
+          fi
+
+      - name: Deploy SAM application
+        id: deploy
+        run: |
+          cd IAC
+          ENV="${{ needs.detect-changes.outputs.environment }}"
+          
+          # Combine main template parts if needed
+          if [ -f "seawater-infrastructure-part2.yaml" ]; then
+            echo "Combining template parts..."
+            cat seawater-infrastructure.yaml > combined-template.yaml
+            # Remove the AWSTemplateFormatVersion and Description from part2
+            tail -n +4 seawater-infrastructure-part2.yaml >> combined-template.yaml
+            TEMPLATE_FILE="combined-template.yaml"
+          else
+            TEMPLATE_FILE="seawater-infrastructure.yaml"
+          fi
+          
+          # Deploy with SAM
+          sam deploy \
+            --template-file "$TEMPLATE_FILE" \
+            --stack-name "${PROJECT_NAME}-${ENV}" \
+            --config-env "$ENV" \
+            --parameter-overrides \
+              Environment="$ENV" \
+              ProjectName="$PROJECT_NAME" \
+              DatabasePassword="${{ secrets.DATABASE_PASSWORD }}" \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --resolve-s3 \
+            --s3-prefix "${PROJECT_NAME}-${ENV}" \
+            --region "$AWS_REGION"
+          
+          # Get stack outputs
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name "${PROJECT_NAME}-${ENV}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl'].OutputValue" \
+            --output text \
+            --region "$AWS_REGION")
+          
+          echo "api-url=$API_URL" >> $GITHUB_OUTPUT
+          echo "API Gateway URL: $API_URL"
+
+      - name: Deploy monitoring stack
+        if: needs.detect-changes.outputs.monitoring-changed == 'true' || github.event.inputs.force_deploy == 'true'
+        run: |
+          cd IAC
+          ENV="${{ needs.detect-changes.outputs.environment }}"
+          
+          # Deploy monitoring components
+          sam deploy \
+            --template-file monitoring/alarms.yaml \
+            --stack-name "${PROJECT_NAME}-${ENV}-monitoring" \
+            --parameter-overrides \
+              Environment="$ENV" \
+              ProjectName="$PROJECT_NAME" \
+              AlertEmail="${{ secrets.ALERT_EMAIL }}" \
+              SlackWebhookUrl="${{ secrets.SLACK_WEBHOOK_URL }}" \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --resolve-s3 \
+            --region "$AWS_REGION"
+
+      - name: Initialize database
+        if: needs.detect-changes.outputs.database-changed == 'true' || github.event.inputs.force_deploy == 'true'
+        run: |
+          ENV="${{ needs.detect-changes.outputs.environment }}"
+          
+          # Get database endpoint from stack outputs
+          DB_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name "${PROJECT_NAME}-${ENV}" \
+            --query "Stacks[0].Outputs[?OutputKey=='DatabaseEndpoint'].OutputValue" \
+            --output text \
+            --region "$AWS_REGION")
+          
+          echo "Database endpoint: $DB_ENDPOINT"
+          
+          # Note: In production, database initialization should be done more carefully
+          # This is a simplified example
+          echo "Database initialization would be performed here"
+
+      - name: Run smoke tests
+        run: |
+          ENV="${{ needs.detect-changes.outputs.environment }}"
+          API_URL="${{ steps.deploy.outputs.api-url }}"
+          
+          echo "Running smoke tests against $API_URL"
+          
+          # Test API Gateway health
+          response=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" || echo "000")
+          if [ "$response" != "200" ]; then
+            echo "❌ API health check failed with status: $response"
+            exit 1
+          fi
+          echo "✅ API health check passed"
+          
+          # Test basic functionality
+          response=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/risk/property?address=1600+Amphitheatre+Parkway,+Mountain+View,+CA" || echo "000")
+          if [ "$response" != "200" ]; then
+            echo "⚠️  Risk API test failed with status: $response (might be expected for new deployment)"
+          else
+            echo "✅ Risk API test passed"
+          fi
+
+      - name: Update CloudWatch dashboard
+        if: needs.detect-changes.outputs.monitoring-changed == 'true' || github.event.inputs.force_deploy == 'true'
+        run: |
+          ENV="${{ needs.detect-changes.outputs.environment }}"
+          
+          # Replace placeholders in dashboard JSON
+          sed "s/\${Environment}/$ENV/g" IAC/monitoring/cloudwatch-dashboard.json > /tmp/dashboard.json
+          
+          # Create or update dashboard
+          aws cloudwatch put-dashboard \
+            --dashboard-name "${PROJECT_NAME}-${ENV}-dashboard" \
+            --dashboard-body file:///tmp/dashboard.json \
+            --region "$AWS_REGION"
+          
+          echo "✅ CloudWatch dashboard updated"
+
+  deploy-security-policies:
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure]
+    if: |
+      always() &&
+      needs.deploy-infrastructure.result == 'success' &&
+      (needs.detect-changes.outputs.infrastructure-changed == 'true' || 
+       github.event.inputs.force_deploy == 'true')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Deploy security policies
+        run: |
+          cd IAC
+          ENV="${{ needs.detect-changes.outputs.environment }}"
+          
+          sam deploy \
+            --template-file security-policies.yaml \
+            --stack-name "${PROJECT_NAME}-${ENV}-security" \
+            --parameter-overrides \
+              Environment="$ENV" \
+              ProjectName="$PROJECT_NAME" \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --resolve-s3 \
+            --region "$AWS_REGION"
+
+  post-deployment-tests:
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, deploy-security-policies]
+    if: |
+      always() &&
+      needs.deploy-infrastructure.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Run integration tests
+        run: |
+          ENV="${{ needs.detect-changes.outputs.environment }}"
+          API_URL="${{ needs.deploy-infrastructure.outputs.api-url }}"
+          
+          echo "Running integration tests for environment: $ENV"
+          echo "API URL: $API_URL"
+          
+          # Run comprehensive integration tests
+          cd tests/integration
+          npm ci
+          API_BASE_URL="$API_URL" npm test
+
+      - name: Performance testing
+        if: needs.detect-changes.outputs.environment == 'production'
+        run: |
+          API_URL="${{ needs.deploy-infrastructure.outputs.api-url }}"
+          
+          echo "Running performance tests against production"
+          # Add performance testing tools like k6 or Artillery here
+          echo "Performance testing would be implemented here"
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [post-deployment-tests]
+    if: |
+      always() &&
+      needs.post-deployment-tests.result == 'success' &&
+      needs.detect-changes.outputs.environment == 'production' &&
+      github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          VERSION="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Generate release notes from commits
+          git log --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0)..HEAD > release-notes.md
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          cat release-notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.release-notes.outputs.version }}
+          release_name: Release ${{ steps.release-notes.outputs.version }}
+          body: |
+            ## Changes in this release
+            ${{ steps.release-notes.outputs.release_notes }}
+            
+            ## Deployment Information
+            - Environment: Production
+            - API URL: ${{ needs.deploy-infrastructure.outputs.api-url }}
+            - Deployed at: ${{ github.event.head_commit.timestamp }}
+          draft: false
+          prerelease: false
+
+  notification:
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, post-deployment-tests]
+    if: always()
+    steps:
+      - name: Notify deployment status
+        run: |
+          ENV="${{ needs.detect-changes.outputs.environment }}"
+          STATUS="${{ needs.post-deployment-tests.result }}"
+          
+          if [ "$STATUS" = "success" ]; then
+            echo "🚀 Deployment to $ENV completed successfully!"
+            echo "API URL: ${{ needs.deploy-infrastructure.outputs.api-url }}"
+          else
+            echo "❌ Deployment to $ENV failed!"
+          fi
+          
+          # Here you could add Slack/email notifications
+          echo "Notification would be sent here"

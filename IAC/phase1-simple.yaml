@@ -1,0 +1,251 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: 'Seawater Climate Risk Platform - Phase 1 Simple Infrastructure (Tim-Combo Pattern)'
+
+Parameters:
+  SeawaterBucketName:
+    Type: String
+    Default: seawater-dev-lambda
+    Description: S3 bucket for Lambda deployment packages
+  
+  AppName:
+    Description: Name of the application
+    Type: String
+    Default: Seawater
+  
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  # Database Configuration (external RDS instance)
+  DatabaseHost:
+    Type: String
+    Default: seawater-dev.cluster-xxx.us-east-2.rds.amazonaws.com
+    Description: PostgreSQL database host (external)
+  
+  DatabaseName:
+    Type: String
+    Default: seawater
+    Description: Database name
+  
+  DatabaseUser:
+    Type: String
+    Default: postgres
+    Description: Database username
+  
+  DatabasePassword:
+    Type: String
+    NoEcho: true
+    Default: TempPassword123!
+    Description: Database password
+  
+  DatabasePort:
+    Type: String
+    Default: 5432
+    Description: Database port
+  
+  # External API Keys
+  MapBoxAccessToken:
+    Type: String
+    NoEcho: true
+    Default: pk.your_mapbox_token_here
+    Description: MapBox access token for geocoding
+  
+  FEMAAPIKey:
+    Type: String
+    NoEcho: true
+    Default: optional_fema_key
+    Description: FEMA API key (optional)
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        NODE_ENV: !Ref Environment
+        DB_HOST: !Ref DatabaseHost
+        DB_NAME: !Ref DatabaseName
+        DB_USER: !Ref DatabaseUser
+        DB_PASSWORD: !Ref DatabasePassword
+        DB_PORT: !Ref DatabasePort
+        MAPBOX_ACCESS_TOKEN: !Ref MapBoxAccessToken
+        FEMA_API_KEY: !Ref FEMAAPIKey
+        LOG_LEVEL: debug
+
+Resources:
+
+  # S3 Bucket for Lambda deployment packages
+  SeawaterLambdaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref SeawaterBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # IAM Role for Lambda Functions (Tim-Combo pattern)
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+            - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SeawaterDatabaseAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds:DescribeDBInstances
+                  - rds:DescribeDBClusters
+                Resource: '*'
+        - PolicyName: SeawaterS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: 
+                  - !Sub "${SeawaterLambdaBucket}/*"
+
+  # API Gateway (Tim-Combo pattern)
+  SeawaterApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "${AppName}-${Environment}-API"
+      StageName: !Ref Environment
+      OpenApiVersion: 3.0.1
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Api-Key'"
+        AllowOrigin: "'*'"
+        MaxAge: "'600'"
+        AllowCredentials: false
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseTemplates:
+            "application/json": '{"message":"$context.error.messageString","requestId":"$context.requestId"}'
+        DEFAULT_5XX:
+          ResponseTemplates:
+            "application/json": '{"message":"$context.error.messageString","requestId":"$context.requestId"}'
+
+  # Core Lambda Functions (No VPC configuration - internet access by default)
+
+  # Health Check Function
+  HealthCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-HealthCheck"
+      CodeUri: 
+        Bucket: !Ref SeawaterLambdaBucket
+        Key: healthCheck.zip
+      Handler: healthCheck.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /health
+            Method: GET
+
+  # Property Risk Assessment Function
+  GetPropertyRiskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-GetPropertyRisk"
+      CodeUri:
+        Bucket: !Ref SeawaterLambdaBucket
+        Key: getPropertyRisk.zip
+      Handler: getPropertyRisk.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GetPropertyRisk:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /properties/{address}/risk
+            Method: GET
+
+  # Property Comparison Function
+  ComparePropertiesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-CompareProperties"
+      CodeUri:
+        Bucket: !Ref SeawaterLambdaBucket
+        Key: compareProperties.zip
+      Handler: compareProperties.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        CompareProperties:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /properties/compare
+            Method: POST
+
+  # Geographic Risk Search Function
+  GetGeographicRiskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-GeographicRisk"
+      CodeUri:
+        Bucket: !Ref SeawaterLambdaBucket
+        Key: getGeographicRisk.zip
+      Handler: getGeographicRisk.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        GeographicRisk:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /geographic/risk
+            Method: GET
+
+Outputs:
+  SeawaterApiUrl:
+    Description: 'API Gateway URL for Seawater application'
+    Value: !Sub 'https://${SeawaterApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiUrl'
+
+  SeawaterApiId:
+    Description: 'API Gateway ID'
+    Value: !Ref SeawaterApi
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiId'
+
+  LambdaBucket:
+    Description: 'S3 Bucket for Lambda packages'
+    Value: !Ref SeawaterLambdaBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaBucket'
+
+  DatabaseConnectionInfo:
+    Description: 'Database connection details'
+    Value: !Sub '${DatabaseHost}:${DatabasePort}/${DatabaseName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabaseInfo'

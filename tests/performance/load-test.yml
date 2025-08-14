@@ -1,0 +1,165 @@
+# Artillery.io Load Testing Configuration
+# Performance testing for Seawater Climate Risk Platform
+
+config:
+  target: 'https://api.seawater.io'
+  phases:
+    # Warm-up phase
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm-up phase"
+    
+    # Normal load testing
+    - duration: 300
+      arrivalRate: 20
+      name: "Normal load - 20 users per second"
+    
+    # Peak load testing
+    - duration: 180
+      arrivalRate: 50
+      name: "Peak load - 50 users per second"
+    
+    # Stress testing
+    - duration: 120
+      arrivalRate: 100
+      name: "Stress test - 100 users per second"
+    
+    # Spike testing
+    - duration: 60
+      arrivalRate: 200
+      name: "Spike test - 200 users per second"
+    
+    # Cool-down phase
+    - duration: 60
+      arrivalRate: 10
+      name: "Cool-down phase"
+
+  defaults:
+    headers:
+      'Content-Type': 'application/json'
+      'User-Agent': 'Seawater-LoadTest/1.0'
+      'Accept': 'application/json'
+
+  processor: './tests/performance/load-test-processor.js'
+
+  variables:
+    # Test property addresses for load testing
+    test_addresses:
+      - "123 Main St, Houston, TX 77002"
+      - "456 Oak Ave, Miami, FL 33101"
+      - "789 Pine St, San Francisco, CA 94102"
+      - "321 Elm Dr, Phoenix, AZ 85001"
+      - "654 Maple Ln, Denver, CO 80202"
+      - "987 Cedar Blvd, Seattle, WA 98101"
+      - "147 Birch Way, Portland, OR 97201"
+      - "258 Willow St, Austin, TX 78701"
+      - "369 Spruce Ave, Atlanta, GA 30301"
+      - "741 Cypress Dr, Las Vegas, NV 89101"
+    
+    api_keys:
+      - "basic-tier-key-1"
+      - "basic-tier-key-2"
+      - "premium-tier-key-1"
+      - "premium-tier-key-2"
+      - "professional-tier-key-1"
+
+scenarios:
+  # Core property risk assessment workflow
+  - name: "Property Risk Assessment"
+    weight: 60
+    flow:
+      - post:
+          url: "/api/geocode"
+          json:
+            address: "{{ $randomFromList(test_addresses) }}"
+          capture:
+            - json: "$.data.Records[0].latitude"
+              as: "latitude"
+            - json: "$.data.Records[0].longitude"
+              as: "longitude"
+            - json: "$.data.Records[0].formatted_address"
+              as: "formatted_address"
+          expect:
+            - statusCode: 200
+            - hasProperty: "data.Records"
+      
+      - get:
+          url: "/api/risk/property"
+          qs:
+            address: "{{ formatted_address }}"
+            sources: "fema"
+          expect:
+            - statusCode: 200
+            - contentType: json
+            - hasProperty: "data.Records[0].fema"
+          capture:
+            - json: "$.meta.Processing_Time_MS"
+              as: "processing_time"
+      
+      - think: 2  # User thinks for 2 seconds
+
+  # Premium features workflow
+  - name: "Premium Risk Assessment"
+    weight: 25
+    flow:
+      - get:
+          url: "/api/risk/property"
+          qs:
+            address: "{{ $randomFromList(test_addresses) }}"
+            sources: "fema,firststreet,climatecheck"
+            include_projections: "true"
+          headers:
+            Authorization: "Bearer {{ $randomFromList(api_keys) }}"
+          expect:
+            - statusCode: [200, 401, 429]  # May fail due to quota or auth
+          ifTrue:
+            - statusCode: 200
+          then:
+            - get:
+                url: "/api/risk/trends/{{ latitude }}/{{ longitude }}"
+                expect:
+                  - statusCode: 200
+
+  # Property comparison workflow
+  - name: "Property Comparison"
+    weight: 10
+    flow:
+      - get:
+          url: "/api/risk/compare"
+          qs:
+            addresses: "{{ test_addresses[0] }},{{ test_addresses[1] }}"
+          expect:
+            - statusCode: 200
+            - hasProperty: "data.Analytics"
+
+  # Professional directory search
+  - name: "Professional Search"
+    weight: 5
+    flow:
+      - get:
+          url: "/api/professionals/search"
+          qs:
+            latitude: "{{ latitude }}"
+            longitude: "{{ longitude }}"
+            radius_km: 25
+            type: "agent"
+          expect:
+            - statusCode: 200
+
+# Performance metrics and thresholds
+expect:
+  # Response time thresholds
+  p95: 2000  # 95th percentile under 2 seconds
+  p99: 5000  # 99th percentile under 5 seconds
+  
+  # Error rate thresholds
+  maxErrorRate: 5  # Maximum 5% error rate
+  
+  # Specific endpoint thresholds
+  thresholds:
+    - metric: "http.response_time.geocode"
+      threshold: 500  # Geocoding under 500ms
+    - metric: "http.response_time.risk_property"
+      threshold: 2000  # Property risk under 2s
+    - metric: "http.response_time.risk_compare"
+      threshold: 3000  # Comparison under 3s

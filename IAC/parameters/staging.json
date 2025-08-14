@@ -1,0 +1,29 @@
+{
+  "Parameters": {
+    "Environment": "staging",
+    "ProjectName": "seawater",
+    "DomainName": "staging-api.seawater.io",
+    "CertificateArn": "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERTIFICATE_ID",
+    "DatabaseUsername": "seawater_staging_admin",
+    "DatabasePassword": "StagingPassword456!",
+    "VpcCidr": "10.1.0.0/16",
+    "PublicSubnetACidr": "10.1.1.0/24",
+    "PublicSubnetBCidr": "10.1.2.0/24",
+    "PrivateSubnetACidr": "10.1.11.0/24",
+    "PrivateSubnetBCidr": "10.1.12.0/24",
+    "DatabaseSubnetACidr": "10.1.21.0/24",
+    "DatabaseSubnetBCidr": "10.1.22.0/24",
+    "LambdaMemorySize": 512,
+    "DatabaseInstanceClass": "db.t3.small",
+    "RedisNodeType": "cache.t4g.small",
+    "EnableReadReplica": "false",
+    "MaxLambdaConcurrency": 25
+  },
+  "Tags": {
+    "Environment": "staging",
+    "Project": "seawater",
+    "Owner": "qa-team",
+    "CostCenter": "engineering",
+    "Purpose": "pre-production-testing"
+  }
+}

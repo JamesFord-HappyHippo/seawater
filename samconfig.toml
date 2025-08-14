@@ -1,0 +1,43 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "Seawater-dev"
+resolve_s3 = true
+s3_prefix = "Seawater-dev"
+region = "us-east-2"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+disable_rollback = true
+parameter_overrides = """
+Environment="dev" \
+SeawaterBucketName="seawater-dev-lambda" \
+AppName="Seawater" \
+DatabaseHost="seawater-dev.cluster-xxx.us-east-2.rds.amazonaws.com" \
+DatabaseName="seawater" \
+DatabaseUser="postgres" \
+DatabasePassword="ChangeMe123!" \
+DatabasePort="5432" \
+MapBoxAccessToken="pk.your_mapbox_token_here" \
+FEMAAPIKey="optional_fema_key"
+"""
+
+[production.deploy.parameters]
+stack_name = "Seawater-prod"
+resolve_s3 = true
+s3_prefix = "Seawater-prod"
+region = "us-east-2"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+disable_rollback = false
+parameter_overrides = """
+Environment="prod" \
+SeawaterBucketName="seawater-prod-lambda" \
+AppName="Seawater" \
+DatabaseHost="seawater-prod.cluster-xxx.us-east-2.rds.amazonaws.com" \
+DatabaseName="seawater" \
+DatabaseUser="postgres" \
+DatabasePassword="SecurePassword123!" \
+DatabasePort="5432" \
+MapBoxAccessToken="pk.your_production_mapbox_token" \
+FEMAAPIKey="your_fema_api_key"
+"""

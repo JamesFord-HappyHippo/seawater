@@ -1,0 +1,542 @@
+# CloudWatch Alarms for Seawater Platform
+# This template creates comprehensive alerting for all critical metrics
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudWatch Alarms for Seawater Climate Risk Platform'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, production]
+  
+  ProjectName:
+    Type: String
+    Default: seawater
+  
+  AlertEmail:
+    Type: String
+    Description: Email address for critical alerts
+    Default: ops@seawater.io
+  
+  SlackWebhookUrl:
+    Type: String
+    Description: Slack webhook URL for notifications
+    Default: ''
+    NoEcho: true
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  HasSlack: !Not [!Equals [!Ref SlackWebhookUrl, '']]
+
+Resources:
+  # ==================== SNS TOPICS ====================
+  
+  # Critical Alerts Topic (immediate attention required)
+  CriticalAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-critical-alerts'
+      DisplayName: 'Seawater Critical Alerts'
+      KmsMasterKeyId: 'alias/aws/sns'
+      
+  CriticalAlertsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref CriticalAlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # Warning Alerts Topic (monitor but not urgent)
+  WarningAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-warning-alerts'
+      DisplayName: 'Seawater Warning Alerts'
+      KmsMasterKeyId: 'alias/aws/sns'
+      
+  WarningAlertsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref WarningAlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # Slack Integration (if configured)
+  SlackIntegrationFunction:
+    Type: AWS::Serverless::Function
+    Condition: HasSlack
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-slack-alerts'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 30
+      Environment:
+        Variables:
+          SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
+          ENVIRONMENT: !Ref Environment
+      InlineCode: |
+        const https = require('https');
+        const url = require('url');
+        
+        exports.handler = async (event) => {
+            console.log('Received SNS event:', JSON.stringify(event, null, 2));
+            
+            for (const record of event.Records) {
+                if (record.Sns) {
+                    await sendSlackNotification(record.Sns);
+                }
+            }
+            
+            return { statusCode: 200 };
+        };
+        
+        async function sendSlackNotification(snsMessage) {
+            const message = JSON.parse(snsMessage.Message);
+            const subject = snsMessage.Subject || 'AWS Alarm';
+            
+            const color = message.NewStateValue === 'ALARM' ? 'danger' : 
+                         message.NewStateValue === 'OK' ? 'good' : 'warning';
+            
+            const slackMessage = {
+                channel: '#alerts',
+                username: 'AWS CloudWatch',
+                icon_emoji: ':warning:',
+                attachments: [{
+                    color: color,
+                    title: subject,
+                    fields: [
+                        {
+                            title: 'Alarm Name',
+                            value: message.AlarmName,
+                            short: true
+                        },
+                        {
+                            title: 'State',
+                            value: message.NewStateValue,
+                            short: true
+                        },
+                        {
+                            title: 'Reason',
+                            value: message.NewStateReason,
+                            short: false
+                        },
+                        {
+                            title: 'Environment',
+                            value: process.env.ENVIRONMENT,
+                            short: true
+                        }
+                    ],
+                    ts: Math.floor(Date.now() / 1000)
+                }]
+            };
+            
+            return new Promise((resolve, reject) => {
+                const webhookUrl = url.parse(process.env.SLACK_WEBHOOK_URL);
+                const postData = JSON.stringify(slackMessage);
+                
+                const options = {
+                    hostname: webhookUrl.hostname,
+                    port: 443,
+                    path: webhookUrl.path,
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Content-Length': Buffer.byteLength(postData)
+                    }
+                };
+                
+                const req = https.request(options, (res) => {
+                    resolve();
+                });
+                
+                req.on('error', reject);
+                req.write(postData);
+                req.end();
+            });
+        }
+      Events:
+        CriticalAlerts:
+          Type: SNS
+          Properties:
+            Topic: !Ref CriticalAlertsTopic
+        WarningAlerts:
+          Type: SNS
+          Properties:
+            Topic: !Ref WarningAlertsTopic
+
+  # ==================== API GATEWAY ALARMS ====================
+  
+  ApiGateway4xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-api-4xx-errors'
+      AlarmDescription: 'High rate of 4xx errors in API Gateway'
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !If [IsProduction, 10, 5]
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${ProjectName}-${Environment}-api'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      OKActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  ApiGateway5xxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-api-5xx-errors'
+      AlarmDescription: 'High rate of 5xx errors in API Gateway'
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${ProjectName}-${Environment}-api'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+      OKActions:
+        - !Ref CriticalAlertsTopic
+      TreatMissingData: notBreaching
+
+  ApiGatewayLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-api-high-latency'
+      AlarmDescription: 'API Gateway latency exceeds target'
+      MetricName: Latency
+      Namespace: AWS/ApiGateway
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 2000  # 2 seconds
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${ProjectName}-${Environment}-api'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      OKActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  # ==================== LAMBDA ALARMS ====================
+  
+  LambdaErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-lambda-error-rate'
+      AlarmDescription: 'High error rate across Lambda functions'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !If [IsProduction, 10, 5]
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub '${ProjectName}-${Environment}-risk-aggregator'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+      OKActions:
+        - !Ref CriticalAlertsTopic
+      TreatMissingData: notBreaching
+
+  LambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-lambda-duration'
+      AlarmDescription: 'Lambda function duration approaching timeout'
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 25000  # 25 seconds (close to 30s timeout)
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub '${ProjectName}-${Environment}-risk-aggregator'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  LambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-lambda-throttles'
+      AlarmDescription: 'Lambda functions being throttled'
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub '${ProjectName}-${Environment}-risk-aggregator'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+      TreatMissingData: notBreaching
+
+  # ==================== DATABASE ALARMS ====================
+  
+  DatabaseCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-cpu-high'
+      AlarmDescription: 'Database CPU utilization is high'
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Sub '${ProjectName}-${Environment}-db'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      OKActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  DatabaseConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-connections-high'
+      AlarmDescription: 'Database connection count is high'
+      MetricName: DatabaseConnections
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80  # Adjust based on instance size
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Sub '${ProjectName}-${Environment}-db'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  DatabaseFreeableMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-memory-low'
+      AlarmDescription: 'Database freeable memory is low'
+      MetricName: FreeableMemory
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 100000000  # 100MB in bytes
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Sub '${ProjectName}-${Environment}-db'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+      TreatMissingData: notBreaching
+
+  DatabaseReadLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-read-latency'
+      AlarmDescription: 'Database read latency is high'
+      MetricName: ReadLatency
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 0.2  # 200ms
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Sub '${ProjectName}-${Environment}-db'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  DatabaseWriteLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-write-latency'
+      AlarmDescription: 'Database write latency is high'
+      MetricName: WriteLatency
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 0.2  # 200ms
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Sub '${ProjectName}-${Environment}-db'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  # ==================== REDIS ALARMS ====================
+  
+  RedisCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-redis-cpu-high'
+      AlarmDescription: 'Redis CPU utilization is high'
+      MetricName: CPUUtilization
+      Namespace: AWS/ElastiCache
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Sub '${ProjectName}-${Environment}-redis'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  RedisMemoryUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-redis-memory-high'
+      AlarmDescription: 'Redis memory usage is high'
+      MetricName: DatabaseMemoryUsagePercentage
+      Namespace: AWS/ElastiCache
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Sub '${ProjectName}-${Environment}-redis'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  # ==================== CLOUDFRONT ALARMS ====================
+  
+  CloudFrontErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-cloudfront-error-rate'
+      AlarmDescription: 'CloudFront error rate is high'
+      MetricName: 4xxErrorRate
+      Namespace: AWS/CloudFront
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5  # 5% error rate
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DistributionId
+          Value: !Sub '${CloudFrontDistribution}'  # This should reference the distribution from main template
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  # ==================== CUSTOM BUSINESS METRICS ALARMS ====================
+  
+  # Business metric alarms for custom metrics
+  SearchRequestsLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-search-requests-low'
+      AlarmDescription: 'Search requests are unusually low'
+      MetricName: SearchRequests
+      Namespace: !Sub 'Seawater/${Environment}'
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 2
+      Threshold: 10  # Adjust based on expected traffic
+      ComparisonOperator: LessThanThreshold
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: breaching
+
+  PremiumFeatureErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-premium-feature-errors'
+      AlarmDescription: 'High error rate for premium features'
+      MetricName: PremiumFeatureErrors
+      Namespace: !Sub 'Seawater/${Environment}'
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+      TreatMissingData: notBreaching
+
+  ExternalAPILatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-external-api-latency'
+      AlarmDescription: 'External API calls are taking too long'
+      MetricName: ExternalAPILatency
+      Namespace: !Sub 'Seawater/${Environment}'
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5000  # 5 seconds
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  # ==================== COMPOSITE ALARMS ====================
+  
+  # Composite alarm for overall system health
+  SystemHealthComposite:
+    Type: AWS::CloudWatch::CompositeAlarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-system-health'
+      AlarmDescription: 'Overall system health indicator'
+      AlarmRule: !Sub |
+        ALARM(${ApiGateway5xxErrorAlarm}) OR
+        ALARM(${LambdaErrorRateAlarm}) OR
+        ALARM(${DatabaseCPUAlarm}) OR
+        ALARM(${DatabaseFreeableMemoryAlarm})
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+      OKActions:
+        - !Ref CriticalAlertsTopic
+
+Outputs:
+  CriticalAlertsTopicArn:
+    Description: 'ARN of the critical alerts SNS topic'
+    Value: !Ref CriticalAlertsTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-critical-alerts-topic'
+
+  WarningAlertsTopicArn:
+    Description: 'ARN of the warning alerts SNS topic'
+    Value: !Ref WarningAlertsTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-warning-alerts-topic'
+
+  SystemHealthAlarmArn:
+    Description: 'ARN of the system health composite alarm'
+    Value: !Ref SystemHealthComposite
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-system-health-alarm'

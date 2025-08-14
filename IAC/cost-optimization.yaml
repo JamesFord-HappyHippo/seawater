@@ -1,0 +1,652 @@
+# Cost Optimization and Budget Management for Seawater Platform
+# This template creates cost monitoring, budgets, and optimization resources
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Cost optimization and budget management for Seawater Climate Risk Platform'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, production]
+  
+  ProjectName:
+    Type: String
+    Default: seawater
+  
+  MonthlyBudgetLimit:
+    Type: Number
+    Default: 500
+    Description: 'Monthly budget limit in USD'
+  
+  AlertEmail:
+    Type: String
+    Description: 'Email for budget alerts'
+    Default: finance@seawater.io
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  HasBudgetMonitoring: !Or [!Condition IsProduction, !Equals [!Ref Environment, 'staging']]
+
+Resources:
+  # ==================== BUDGET ALERTS ====================
+  
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: HasBudgetMonitoring
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-${Environment}-monthly-budget'
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetLimit
+          Unit: USD
+        TimeUnit: MONTHLY
+        BudgetType: COST
+        CostFilters:
+          TagKey: 
+            - Project
+          TagValue:
+            - !Ref ProjectName
+        NotificationsWithSubscribers:
+          - Notification:
+              NotificationType: ACTUAL
+              ComparisonOperator: GREATER_THAN
+              Threshold: 80
+              ThresholdType: PERCENTAGE
+            Subscribers:
+              - SubscriptionType: EMAIL
+                Address: !Ref AlertEmail
+          - Notification:
+              NotificationType: FORECASTED
+              ComparisonOperator: GREATER_THAN
+              Threshold: 100
+              ThresholdType: PERCENTAGE
+            Subscribers:
+              - SubscriptionType: EMAIL
+                Address: !Ref AlertEmail
+
+  # Daily Budget for tight cost control
+  DailyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: IsProduction
+    Properties:
+      Budget:
+        BudgetName: !Sub '${ProjectName}-${Environment}-daily-budget'
+        BudgetLimit:
+          Amount: !Ref 
+            Fn::Sub:
+              - '${DailyLimit}'
+              - DailyLimit: !Ref MonthlyBudgetLimit
+        TimeUnit: DAILY
+        BudgetType: COST
+        CostFilters:
+          TagKey: 
+            - Project
+          TagValue:
+            - !Ref ProjectName
+        NotificationsWithSubscribers:
+          - Notification:
+              NotificationType: ACTUAL
+              ComparisonOperator: GREATER_THAN
+              Threshold: 50
+              ThresholdType: PERCENTAGE
+            Subscribers:
+              - SubscriptionType: EMAIL
+                Address: !Ref AlertEmail
+
+  # ==================== COST ANOMALY DETECTION ====================
+  
+  CostAnomalyDetector:
+    Type: AWS::CE::AnomalyDetector
+    Condition: HasBudgetMonitoring
+    Properties:
+      AnomalyDetectorName: !Sub '${ProjectName}-${Environment}-anomaly-detector'
+      MonitorType: DIMENSIONAL
+      MonitorSpecification: |
+        {
+          "Dimension": "SERVICE",
+          "MatchOptions": ["EQUALS"],
+          "Values": ["Amazon Relational Database Service", "AWS Lambda", "Amazon API Gateway", "Amazon ElastiCache", "Amazon CloudFront"]
+        }
+      
+  CostAnomalySubscription:
+    Type: AWS::CE::AnomalySubscription
+    Condition: HasBudgetMonitoring
+    Properties:
+      SubscriptionName: !Sub '${ProjectName}-${Environment}-anomaly-alerts'
+      AnomalyDetector: !Ref CostAnomalyDetector
+      MonitorArnList:
+        - !GetAtt CostAnomalyDetector.AnomalyDetectorArn
+      Subscribers:
+        - Type: EMAIL
+          Address: !Ref AlertEmail
+      Threshold: 100  # Alert on $100+ anomalies
+      Frequency: DAILY
+
+  # ==================== COST OPTIMIZATION LAMBDA ====================
+  
+  CostOptimizationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-cost-optimizer'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 300
+      ReservedConcurrencyLimit: 1
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'rds:DescribeDBInstances'
+                - 'rds:DescribeDBClusters'
+                - 'rds:ModifyDBInstance'
+                - 'elasticache:DescribeCacheClusters'
+                - 'lambda:ListFunctions'
+                - 'lambda:GetFunction'
+                - 'lambda:GetProvisionedConcurrencyConfig'
+                - 'lambda:PutProvisionedConcurrencyConfig'
+                - 'lambda:DeleteProvisionedConcurrencyConfig'
+                - 'cloudwatch:GetMetricStatistics'
+                - 'cloudwatch:PutMetricData'
+                - 'application-autoscaling:*'
+                - 'tag:GetResources'
+              Resource: '*'
+      InlineCode: |
+        const AWS = require('aws-sdk');
+        const cloudwatch = new AWS.CloudWatch();
+        const rds = new AWS.RDS();
+        const lambda = new AWS.Lambda();
+        const elasticache = new AWS.ElastiCache();
+        
+        exports.handler = async (event) => {
+            console.log('Starting cost optimization analysis...');
+            
+            const optimizations = {
+                rds: [],
+                lambda: [],
+                elasticache: [],
+                recommendations: []
+            };
+            
+            try {
+                // Analyze RDS instances
+                await analyzeRDSCosts(optimizations);
+                
+                // Analyze Lambda functions
+                await analyzeLambdaCosts(optimizations);
+                
+                // Analyze ElastiCache
+                await analyzeElastiCacheCosts(optimizations);
+                
+                // Generate recommendations
+                generateRecommendations(optimizations);
+                
+                // Publish metrics
+                await publishCostMetrics(optimizations);
+                
+                console.log('Cost optimization analysis completed');
+                return {
+                    statusCode: 200,
+                    body: JSON.stringify(optimizations)
+                };
+                
+            } catch (error) {
+                console.error('Error in cost optimization:', error);
+                throw error;
+            }
+        };
+        
+        async function analyzeRDSCosts(optimizations) {
+            const instances = await rds.describeDBInstances({
+                Filters: [
+                    {
+                        Name: 'tag:Project',
+                        Values: [process.env.PROJECT_NAME]
+                    }
+                ]
+            }).promise();
+            
+            for (const reservation of instances.DBInstances) {
+                const instance = reservation.DBInstance;
+                
+                // Get CPU utilization for the past 7 days
+                const cpuMetrics = await getCPUUtilization(instance.DBInstanceIdentifier, 'AWS/RDS');
+                
+                const optimization = {
+                    instanceId: instance.DBInstanceIdentifier,
+                    currentClass: instance.DBInstanceClass,
+                    avgCPU: cpuMetrics.average,
+                    maxCPU: cpuMetrics.maximum,
+                    recommendation: null
+                };
+                
+                // Recommend downsizing if consistently low CPU
+                if (cpuMetrics.average < 20 && cpuMetrics.maximum < 50) {
+                    const currentType = instance.DBInstanceClass;
+                    const recommendedType = getDownsizedInstanceType(currentType);
+                    if (recommendedType) {
+                        optimization.recommendation = {
+                            action: 'downsize',
+                            newClass: recommendedType,
+                            estimatedSavings: calculateRDSSavings(currentType, recommendedType)
+                        };
+                    }
+                }
+                
+                optimizations.rds.push(optimization);
+            }
+        }
+        
+        async function analyzeLambdaCosts(optimizations) {
+            const functions = await lambda.listFunctions({
+                FunctionVersion: 'ALL'
+            }).promise();
+            
+            const projectFunctions = functions.Functions.filter(fn => 
+                fn.FunctionName.includes(process.env.PROJECT_NAME)
+            );
+            
+            for (const func of projectFunctions) {
+                // Get invocation and duration metrics
+                const invocations = await getMetricStatistics('AWS/Lambda', 'Invocations', 'FunctionName', func.FunctionName);
+                const duration = await getMetricStatistics('AWS/Lambda', 'Duration', 'FunctionName', func.FunctionName);
+                const errors = await getMetricStatistics('AWS/Lambda', 'Errors', 'FunctionName', func.FunctionName);
+                
+                const optimization = {
+                    functionName: func.FunctionName,
+                    currentMemory: func.MemorySize,
+                    avgDuration: duration.average,
+                    invocations: invocations.sum,
+                    errorRate: errors.sum / Math.max(invocations.sum, 1),
+                    recommendation: null
+                };
+                
+                // Memory optimization based on duration patterns
+                if (duration.average < func.Timeout * 0.1) {
+                    // Function finishes very quickly, might benefit from more memory
+                    const recommendedMemory = Math.min(func.MemorySize * 2, 3008);
+                    optimization.recommendation = {
+                        action: 'increase_memory',
+                        newMemory: recommendedMemory,
+                        reason: 'Potentially CPU-bound, more memory could reduce duration and cost'
+                    };
+                } else if (duration.average > func.Timeout * 0.8) {
+                    optimization.recommendation = {
+                        action: 'increase_timeout',
+                        reason: 'Function approaching timeout limit'
+                    };
+                }
+                
+                optimizations.lambda.push(optimization);
+            }
+        }
+        
+        async function analyzeElastiCacheCosts(optimizations) {
+            const clusters = await elasticache.describeCacheClusters({
+                ShowCacheNodeInfo: true
+            }).promise();
+            
+            for (const cluster of clusters.CacheClusters) {
+                if (!cluster.CacheClusterId.includes(process.env.PROJECT_NAME)) continue;
+                
+                const cpuMetrics = await getCPUUtilization(cluster.CacheClusterId, 'AWS/ElastiCache');
+                const connections = await getMetricStatistics('AWS/ElastiCache', 'CurrConnections', 'CacheClusterId', cluster.CacheClusterId);
+                
+                const optimization = {
+                    clusterId: cluster.CacheClusterId,
+                    nodeType: cluster.CacheNodeType,
+                    avgCPU: cpuMetrics.average,
+                    avgConnections: connections.average,
+                    recommendation: null
+                };
+                
+                // Recommend downsizing if low utilization
+                if (cpuMetrics.average < 10 && connections.average < 10) {
+                    optimization.recommendation = {
+                        action: 'consider_downsizing',
+                        reason: 'Low CPU and connection utilization'
+                    };
+                }
+                
+                optimizations.elasticache.push(optimization);
+            }
+        }
+        
+        function generateRecommendations(optimizations) {
+            const recommendations = [];
+            
+            // RDS recommendations
+            const rdsDownsizes = optimizations.rds.filter(r => r.recommendation?.action === 'downsize');
+            if (rdsDownsizes.length > 0) {
+                const totalSavings = rdsDownsizes.reduce((sum, r) => sum + r.recommendation.estimatedSavings, 0);
+                recommendations.push({
+                    category: 'RDS',
+                    action: 'Downsize underutilized instances',
+                    impact: `Potential monthly savings: $${totalSavings.toFixed(2)}`,
+                    instances: rdsDownsizes.length
+                });
+            }
+            
+            // Lambda recommendations
+            const memoryOptimizations = optimizations.lambda.filter(l => l.recommendation);
+            if (memoryOptimizations.length > 0) {
+                recommendations.push({
+                    category: 'Lambda',
+                    action: 'Optimize memory allocation',
+                    impact: `${memoryOptimizations.length} functions could benefit from memory tuning`,
+                    functions: memoryOptimizations.length
+                });
+            }
+            
+            // ElastiCache recommendations
+            const cacheOptimizations = optimizations.elasticache.filter(c => c.recommendation);
+            if (cacheOptimizations.length > 0) {
+                recommendations.push({
+                    category: 'ElastiCache',
+                    action: 'Review cache cluster sizing',
+                    impact: `${cacheOptimizations.length} clusters showing low utilization`,
+                    clusters: cacheOptimizations.length
+                });
+            }
+            
+            optimizations.recommendations = recommendations;
+        }
+        
+        async function getCPUUtilization(resourceId, namespace) {
+            const dimensionName = namespace === 'AWS/RDS' ? 'DBInstanceIdentifier' : 'CacheClusterId';
+            
+            const params = {
+                Namespace: namespace,
+                MetricName: 'CPUUtilization',
+                StartTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+                EndTime: new Date(),
+                Period: 3600, // 1 hour
+                Statistics: ['Average', 'Maximum'],
+                Dimensions: [
+                    {
+                        Name: dimensionName,
+                        Value: resourceId
+                    }
+                ]
+            };
+            
+            const data = await cloudwatch.getMetricStatistics(params).promise();
+            
+            if (data.Datapoints.length === 0) {
+                return { average: 0, maximum: 0 };
+            }
+            
+            const avgCPU = data.Datapoints.reduce((sum, dp) => sum + dp.Average, 0) / data.Datapoints.length;
+            const maxCPU = Math.max(...data.Datapoints.map(dp => dp.Maximum));
+            
+            return { average: avgCPU, maximum: maxCPU };
+        }
+        
+        async function getMetricStatistics(namespace, metricName, dimensionName, dimensionValue) {
+            const params = {
+                Namespace: namespace,
+                MetricName: metricName,
+                StartTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+                EndTime: new Date(),
+                Period: 3600,
+                Statistics: ['Sum', 'Average'],
+                Dimensions: [
+                    {
+                        Name: dimensionName,
+                        Value: dimensionValue
+                    }
+                ]
+            };
+            
+            const data = await cloudwatch.getMetricStatistics(params).promise();
+            
+            if (data.Datapoints.length === 0) {
+                return { sum: 0, average: 0 };
+            }
+            
+            const sum = data.Datapoints.reduce((sum, dp) => sum + dp.Sum, 0);
+            const average = data.Datapoints.reduce((sum, dp) => sum + dp.Average, 0) / data.Datapoints.length;
+            
+            return { sum, average };
+        }
+        
+        function getDownsizedInstanceType(currentType) {
+            const downsizeMap = {
+                'db.t3.small': 'db.t3.micro',
+                'db.t3.medium': 'db.t3.small',
+                'db.t3.large': 'db.t3.medium',
+                'db.r6g.large': 'db.t3.large',
+                'db.r6g.xlarge': 'db.r6g.large'
+            };
+            
+            return downsizeMap[currentType] || null;
+        }
+        
+        function calculateRDSSavings(currentType, recommendedType) {
+            // Simplified pricing estimates (update with actual pricing)
+            const pricing = {
+                'db.t3.micro': 15,
+                'db.t3.small': 30,
+                'db.t3.medium': 60,
+                'db.t3.large': 120,
+                'db.r6g.large': 180,
+                'db.r6g.xlarge': 360
+            };
+            
+            const currentCost = pricing[currentType] || 0;
+            const newCost = pricing[recommendedType] || 0;
+            
+            return Math.max(0, currentCost - newCost);
+        }
+        
+        async function publishCostMetrics(optimizations) {
+            const namespace = `Seawater/${process.env.ENVIRONMENT}`;
+            const timestamp = new Date();
+            
+            const metricData = [
+                {
+                    MetricName: 'CostOptimizationRecommendations',
+                    Value: optimizations.recommendations.length,
+                    Unit: 'Count',
+                    Timestamp: timestamp
+                },
+                {
+                    MetricName: 'RDSInstancesAnalyzed',
+                    Value: optimizations.rds.length,
+                    Unit: 'Count',
+                    Timestamp: timestamp
+                },
+                {
+                    MetricName: 'LambdaFunctionsAnalyzed',
+                    Value: optimizations.lambda.length,
+                    Unit: 'Count',
+                    Timestamp: timestamp
+                }
+            ];
+            
+            await cloudwatch.putMetricData({
+                Namespace: namespace,
+                MetricData: metricData
+            }).promise();
+        }
+      Events:
+        WeeklyOptimization:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 9 ? * MON *)'  # Every Monday at 9 AM
+            Description: 'Weekly cost optimization analysis'
+
+  # ==================== RESOURCE TAGGING ENFORCEMENT ====================
+  
+  TaggingComplianceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-tagging-compliance'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 60
+      Environment:
+        Variables:
+          REQUIRED_TAGS: 'Project,Environment,Owner,CostCenter'
+          PROJECT_NAME: !Ref ProjectName
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - 'tag:GetResources'
+                - 'tag:TagResources'
+                - 'tag:UntagResources'
+                - 'resource-groups:*'
+                - 'sns:Publish'
+              Resource: '*'
+      InlineCode: |
+        const AWS = require('aws-sdk');
+        const resourceGroupsTagging = new AWS.ResourceGroupsTaggingAPI();
+        const sns = new AWS.SNS();
+        
+        exports.handler = async (event) => {
+            console.log('Starting tagging compliance check...');
+            
+            const requiredTags = process.env.REQUIRED_TAGS.split(',');
+            const nonCompliantResources = [];
+            
+            try {
+                // Get all resources for the project
+                const resources = await resourceGroupsTagging.getResources({
+                    TagFilters: [
+                        {
+                            Key: 'Project',
+                            Values: [process.env.PROJECT_NAME]
+                        }
+                    ]
+                }).promise();
+                
+                for (const resource of resources.ResourceTagMappingList) {
+                    const resourceTags = resource.Tags.map(tag => tag.Key);
+                    const missingTags = requiredTags.filter(tag => !resourceTags.includes(tag));
+                    
+                    if (missingTags.length > 0) {
+                        nonCompliantResources.push({
+                            arn: resource.ResourceARN,
+                            missingTags: missingTags
+                        });
+                    }
+                }
+                
+                if (nonCompliantResources.length > 0) {
+                    console.log(`Found ${nonCompliantResources.length} non-compliant resources`);
+                    await sendComplianceAlert(nonCompliantResources);
+                } else {
+                    console.log('All resources are compliant with tagging requirements');
+                }
+                
+                return {
+                    statusCode: 200,
+                    body: JSON.stringify({
+                        compliant: nonCompliantResources.length === 0,
+                        nonCompliantCount: nonCompliantResources.length,
+                        nonCompliantResources: nonCompliantResources
+                    })
+                };
+                
+            } catch (error) {
+                console.error('Error in tagging compliance check:', error);
+                throw error;
+            }
+        };
+        
+        async function sendComplianceAlert(nonCompliantResources) {
+            const message = {
+                subject: `Tagging Compliance Alert - ${process.env.PROJECT_NAME}`,
+                body: `Found ${nonCompliantResources.length} resources that don't meet tagging requirements:\n\n` +
+                      nonCompliantResources.map(r => 
+                        `Resource: ${r.arn}\nMissing tags: ${r.missingTags.join(', ')}\n`
+                      ).join('\n')
+            };
+            
+            // In a real implementation, you'd send this to an SNS topic
+            console.log('Compliance alert:', message);
+        }
+      Events:
+        DailyCompliance:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 8 * * ? *)'  # Daily at 8 AM
+            Description: 'Daily tagging compliance check'
+
+  # ==================== COST DASHBOARD ====================
+  
+  CostDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-${Environment}-cost-dashboard'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Billing", "EstimatedCharges", "Currency", "USD" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "Estimated Monthly Charges",
+                "period": 86400,
+                "stat": "Maximum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "Seawater/${Environment}", "CostOptimizationRecommendations" ],
+                  [ ".", "RDSInstancesAnalyzed" ],
+                  [ ".", "LambdaFunctionsAnalyzed" ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Cost Optimization Metrics",
+                "period": 3600
+              }
+            }
+          ]
+        }
+
+Outputs:
+  MonthlyBudgetId:
+    Description: 'Monthly budget ID'
+    Value: !Ref MonthlyBudget
+    Condition: HasBudgetMonitoring
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-monthly-budget-id'
+
+  CostOptimizationFunctionArn:
+    Description: 'Cost optimization function ARN'
+    Value: !GetAtt CostOptimizationFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-cost-optimizer-arn'
+
+  CostDashboardUrl:
+    Description: 'Cost dashboard URL'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-${Environment}-cost-dashboard'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-cost-dashboard-url'

@@ -1,0 +1,433 @@
+{
+  "test_properties": {
+    "high_flood_risk": {
+      "address": "123 Riverside Dr, Houston, TX 77007",
+      "coordinates": {
+        "latitude": 29.7604,
+        "longitude": -95.3698
+      },
+      "expected_risks": {
+        "flood": {
+          "fema_zone": "AE",
+          "score_range": [80, 100],
+          "requires_insurance": true
+        },
+        "hurricane": {
+          "score_range": [85, 100]
+        },
+        "wildfire": {
+          "score_range": [0, 30]
+        }
+      },
+      "historical_events": [
+        {
+          "type": "flood",
+          "date": "2017-08-25",
+          "name": "Hurricane Harvey",
+          "severity": 5
+        },
+        {
+          "type": "flood", 
+          "date": "2016-04-18",
+          "name": "Tax Day Floods",
+          "severity": 4
+        }
+      ]
+    },
+    "high_wildfire_risk": {
+      "address": "456 Canyon Rd, Paradise, CA 95969",
+      "coordinates": {
+        "latitude": 39.7596,
+        "longitude": -121.6219
+      },
+      "expected_risks": {
+        "wildfire": {
+          "score_range": [90, 100],
+          "wui_category": "high"
+        },
+        "heat": {
+          "score_range": [70, 95]
+        },
+        "flood": {
+          "score_range": [0, 25]
+        }
+      },
+      "historical_events": [
+        {
+          "type": "wildfire",
+          "date": "2018-11-08",
+          "name": "Camp Fire",
+          "severity": 5,
+          "acres_burned": 153336
+        }
+      ]
+    },
+    "high_earthquake_risk": {
+      "address": "789 Fault St, San Francisco, CA 94102", 
+      "coordinates": {
+        "latitude": 37.7749,
+        "longitude": -122.4194
+      },
+      "expected_risks": {
+        "earthquake": {
+          "score_range": [80, 100],
+          "fault_distance_km": 2.5
+        },
+        "wildfire": {
+          "score_range": [30, 60]
+        },
+        "flood": {
+          "score_range": [10, 40]
+        }
+      },
+      "historical_events": [
+        {
+          "type": "earthquake",
+          "date": "1989-10-17",
+          "name": "Loma Prieta",
+          "magnitude": 6.9
+        }
+      ]
+    },
+    "low_risk_baseline": {
+      "address": "321 Prairie Ave, Manhattan, KS 66502",
+      "coordinates": {
+        "latitude": 39.1836,
+        "longitude": -96.5717
+      },
+      "expected_risks": {
+        "flood": {
+          "fema_zone": "X",
+          "score_range": [0, 30],
+          "requires_insurance": false
+        },
+        "wildfire": {
+          "score_range": [0, 25]
+        },
+        "tornado": {
+          "score_range": [40, 70]
+        },
+        "earthquake": {
+          "score_range": [0, 20]
+        }
+      },
+      "historical_events": [
+        {
+          "type": "tornado",
+          "date": "2008-05-23",
+          "name": "Manhattan EF4",
+          "severity": 4
+        }
+      ]
+    },
+    "coastal_hurricane_risk": {
+      "address": "987 Ocean Dr, Miami Beach, FL 33139",
+      "coordinates": {
+        "latitude": 25.7907,
+        "longitude": -80.1300
+      },
+      "expected_risks": {
+        "hurricane": {
+          "score_range": [85, 100],
+          "wind_speed_category": "major"
+        },
+        "flood": {
+          "score_range": [70, 95],
+          "storm_surge_risk": "high"
+        },
+        "heat": {
+          "score_range": [60, 85]
+        }
+      },
+      "historical_events": [
+        {
+          "type": "hurricane",
+          "date": "1992-08-24",
+          "name": "Hurricane Andrew",
+          "category": 5
+        },
+        {
+          "type": "hurricane",
+          "date": "2005-10-24",
+          "name": "Hurricane Wilma", 
+          "category": 3
+        }
+      ]
+    }
+  },
+  "api_test_data": {
+    "valid_addresses": [
+      "123 Main St, Houston, TX 77002",
+      "456 Oak Ave, Miami, FL 33101", 
+      "789 Pine St, San Francisco, CA 94102",
+      "321 Elm Dr, Phoenix, AZ 85001",
+      "654 Maple Ln, Denver, CO 80202",
+      "987 Cedar Blvd, Seattle, WA 98101",
+      "147 Birch Way, Portland, OR 97201",
+      "258 Willow St, Austin, TX 78701",
+      "369 Spruce Ave, Atlanta, GA 30301",
+      "741 Cypress Dr, Las Vegas, NV 89101"
+    ],
+    "invalid_addresses": [
+      "",
+      "123",
+      "Invalid Address XYZ",
+      "<script>alert('xss')</script>",
+      "'; DROP TABLE addresses; --",
+      "A".repeat(201),
+      null,
+      123
+    ],
+    "coordinate_ranges": {
+      "valid": [
+        { "lat": 40.7128, "lng": -74.0060 },
+        { "lat": 25.7617, "lng": -80.1918 },
+        { "lat": 37.7749, "lng": -122.4194 },
+        { "lat": 41.8781, "lng": -87.6298 },
+        { "lat": 29.7604, "lng": -95.3698 }
+      ],
+      "invalid": [
+        { "lat": 91, "lng": 0 },
+        { "lat": -91, "lng": 0 },
+        { "lat": 0, "lng": 181 },
+        { "lat": 0, "lng": -181 },
+        { "lat": "40.7128", "lng": "-74.0060" },
+        { "lat": null, "lng": null }
+      ]
+    }
+  },
+  "mock_api_responses": {
+    "fema": {
+      "harris_county_tx": {
+        "NationalRiskIndex": [{
+          "StateAbbreviation": "TX",
+          "CountyName": "Harris County", 
+          "CountyFips": "48201",
+          "RiskScore": 98.52,
+          "RiskRating": "Relatively High",
+          "HazardRatings": {
+            "Coastal Flooding": "Relatively High",
+            "Riverine Flooding": "Very High",
+            "Hurricane": "Very High", 
+            "Tornado": "Relatively Moderate",
+            "Wildfire": "Very Low",
+            "Heat Wave": "Relatively High"
+          },
+          "RiskScores": {
+            "CFLD_RISKS": 85.2,
+            "RFLD_RISKS": 94.1,
+            "HRCN_RISKS": 89.7,
+            "TRND_RISKS": 45.3,
+            "WFIR_RISKS": 8.1,
+            "HWAV_RISKS": 67.8
+          },
+          "SocialVulnerability": 0.6234,
+          "CommunityResilience": 0.4892
+        }]
+      }
+    },
+    "firststreet": {
+      "houston_property": {
+        "property": {
+          "fsid": "12345678901",
+          "address": "123 Riverside Dr, Houston, TX 77007",
+          "coordinates": {
+            "lat": 29.7604,
+            "lng": -95.3698
+          },
+          "risk_scores": {
+            "flood": {
+              "current": 8,
+              "2035": 9,
+              "2050": 10
+            },
+            "fire": {
+              "current": 1,
+              "2035": 2,
+              "2050": 3
+            },
+            "heat": {
+              "current": 6,
+              "2035": 8,
+              "2050": 9
+            }
+          },
+          "flood_details": {
+            "annual_chance": 0.01,
+            "depth_1_pct": 3.2,
+            "flood_factor": 8,
+            "environmental_risk": "Major"
+          }
+        }
+      }
+    },
+    "climatecheck": {
+      "denver_property": {
+        "property": {
+          "address": "123 Main St, Denver, CO 80202",
+          "coordinates": [39.7392, -104.9903],
+          "risk_factors": {
+            "precipitation": {
+              "score": 4,
+              "trend": "increasing",
+              "confidence": "high"
+            },
+            "drought": {
+              "score": 7,
+              "trend": "increasing", 
+              "confidence": "high"
+            },
+            "extreme_heat": {
+              "score": 6,
+              "trend": "increasing",
+              "confidence": "very_high"
+            },
+            "wildfire": {
+              "score": 5,
+              "trend": "increasing",
+              "confidence": "high"
+            }
+          }
+        }
+      }
+    }
+  },
+  "performance_benchmarks": {
+    "api_response_times": {
+      "geocoding": 500,
+      "risk_property": 2000,
+      "risk_compare": 3000,
+      "professionals_search": 1500,
+      "premium_projections": 5000
+    },
+    "throughput_targets": {
+      "concurrent_users": 1000,
+      "requests_per_second": 100,
+      "daily_searches": 10000
+    },
+    "error_rate_thresholds": {
+      "api_errors": 1,
+      "timeout_errors": 2,
+      "external_api_failures": 5
+    }
+  },
+  "security_test_data": {
+    "sql_injection_attempts": [
+      "'; DROP TABLE users; --",
+      "' OR '1'='1",
+      "'; INSERT INTO users VALUES ('hacker', 'password'); --",
+      "' UNION SELECT * FROM users --"
+    ],
+    "xss_attempts": [
+      "<script>alert('xss')</script>",
+      "<img src=x onerror=alert('xss')>",
+      "javascript:alert('xss')",
+      "<svg onload=alert('xss')>"
+    ],
+    "invalid_tokens": [
+      "invalid.token.signature",
+      "expired.token.here",
+      "",
+      null,
+      "Bearer malformed-token"
+    ],
+    "rate_limit_scenarios": [
+      {
+        "tier": "free",
+        "limit": 50,
+        "window": "1hour"
+      },
+      {
+        "tier": "basic", 
+        "limit": 500,
+        "window": "1hour"
+      },
+      {
+        "tier": "premium",
+        "limit": 2000,
+        "window": "1hour"
+      }
+    ]
+  },
+  "subscription_test_data": {
+    "tiers": {
+      "free": {
+        "features": ["basic_risk_lookup", "fema_data"],
+        "monthly_quota": 50,
+        "max_addresses": 1
+      },
+      "basic": {
+        "features": ["basic_risk_lookup", "fema_data", "geocoding"],
+        "monthly_quota": 500,
+        "max_addresses": 3
+      },
+      "premium": {
+        "features": ["basic_risk_lookup", "fema_data", "geocoding", "premium_data_sources", "projections"],
+        "monthly_quota": 2000,
+        "max_addresses": 5
+      },
+      "professional": {
+        "features": ["basic_risk_lookup", "fema_data", "geocoding", "premium_data_sources", "projections", "bulk_processing", "api_management"],
+        "monthly_quota": 10000,
+        "max_addresses": 50
+      }
+    },
+    "test_users": {
+      "free_user": {
+        "id": "user-free-test-001",
+        "tier": "free",
+        "api_key": "free-a1b2c3d4e5f67890123456789abcdef0"
+      },
+      "premium_user": {
+        "id": "user-premium-test-001", 
+        "tier": "premium",
+        "api_key": "premium-fedcba0987654321abcdef1234567890"
+      },
+      "professional_user": {
+        "id": "user-professional-test-001",
+        "tier": "professional", 
+        "api_key": "professional-1234567890abcdef0123456789abcdef"
+      }
+    }
+  },
+  "accessibility_test_data": {
+    "color_contrast_requirements": {
+      "normal_text": 4.5,
+      "large_text": 3.0,
+      "ui_components": 3.0
+    },
+    "keyboard_navigation_paths": [
+      ["search-input", "search-button", "results-section"],
+      ["nav-home", "nav-professionals", "nav-education"],
+      ["risk-card", "map-view", "professional-list"]
+    ],
+    "screen_reader_elements": [
+      "main",
+      "navigation", 
+      "form",
+      "alert",
+      "button",
+      "heading"
+    ]
+  },
+  "environment_configs": {
+    "test": {
+      "api_base_url": "https://api-test.seawater.io",
+      "mapbox_token": "pk.test.mapbox.token",
+      "database_url": "postgresql://test:test@localhost:5432/seawater_test",
+      "redis_url": "redis://localhost:6379/1"
+    },
+    "staging": {
+      "api_base_url": "https://api-staging.seawater.io",
+      "mapbox_token": "pk.staging.mapbox.token",
+      "database_url": "postgresql://staging:staging@db-staging.seawater.io:5432/seawater_staging",
+      "redis_url": "redis://cache-staging.seawater.io:6379/0"
+    },
+    "production": {
+      "api_base_url": "https://api.seawater.io",
+      "mapbox_token": "pk.production.mapbox.token",
+      "database_url": "postgresql://prod:prod@db.seawater.io:5432/seawater_prod",
+      "redis_url": "redis://cache.seawater.io:6379/0"
+    }
+  }
+}

@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: 'Seawater PostgreSQL Database - Simple Public Setup (Tim-Combo Pattern)'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.r5.large
+    Description: RDS instance class
+  
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 1000
+    Description: Database allocated storage in GB
+  
+  DBUsername:
+    Type: String
+    Default: postgres
+    Description: Database master username
+  
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Default: TempPassword123!
+    Description: Database master password (min 8 characters)
+
+Resources:
+
+  # Simple DB Security Group (allows public access for development)
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub 'Seawater-${Environment}-DB-SG'
+      GroupDescription: Security group for PostgreSQL database (public access for dev)
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+          Description: PostgreSQL access from anywhere (development only)
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-DB-SG'
+
+  # DB Subnet Group (uses default VPC)
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub 'seawater-${Environment}-db-subnet-group'
+      DBSubnetGroupDescription: Subnet group for Seawater PostgreSQL database
+      SubnetIds:
+        # Use default VPC subnets (replace these with actual subnet IDs for your region)
+        - subnet-12345678  # Replace with actual default subnet ID
+        - subnet-87654321  # Replace with actual default subnet ID
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-DB-SubnetGroup'
+
+  # PostgreSQL Database with PostGIS (Public Access)
+  SeawaterDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub 'seawater-${Environment}-db'
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: '15.4'
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp2
+      StorageEncrypted: true
+      
+      # Database Configuration
+      DBName: seawater
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      Port: 5432
+      
+      # Network Configuration (Public access for development)
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      PubliclyAccessible: true  # Allows direct connection from Lambda and development
+      
+      # Backup and Maintenance
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      
+      # Performance (Single AZ for development cost savings)
+      MultiAZ: false
+      MonitoringInterval: 0  # Disable enhanced monitoring for cost savings
+      
+      # Logging
+      EnableCloudwatchLogsExports:
+        - postgresql
+      
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-Database'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  DatabaseEndpoint:
+    Description: 'PostgreSQL database endpoint'
+    Value: !GetAtt SeawaterDatabase.Endpoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabaseEndpoint'
+
+  DatabasePort:
+    Description: 'PostgreSQL database port'
+    Value: !GetAtt SeawaterDatabase.Endpoint.Port
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabasePort'
+
+  DatabaseName:
+    Description: 'Database name'
+    Value: seawater
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabaseName'
+
+  DatabaseConnectionString:
+    Description: 'Database connection string for applications'
+    Value: !Sub 'postgresql://${DBUsername}:${DBPassword}@${SeawaterDatabase.Endpoint.Address}:${SeawaterDatabase.Endpoint.Port}/seawater'
+    Export:
+      Name: !Sub '${AWS::StackName}-ConnectionString'
+
+  DatabaseSecurityGroupId:
+    Description: 'Database security group ID'
+    Value: !Ref DatabaseSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabaseSecurityGroupId'

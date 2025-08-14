@@ -1,0 +1,395 @@
+name: Seawater Platform CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run nightly tests at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  NODE_VERSION: '18.x'
+  AWS_REGION: 'us-east-1'
+  CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+jobs:
+  # Code Quality and Security Checks
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint code
+        run: npm run lint
+
+      - name: Type checking
+        run: npm run type-check
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Security audit
+        run: npm audit --audit-level=moderate
+
+      - name: Dependency check
+        run: npx depcheck
+
+  # Unit and Integration Tests
+  test-suite:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test-type: [unit, integration, frontend, backend, security]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup test environment
+        run: |
+          npm run test:setup
+          echo "REACT_APP_API_BASE_URL=https://api-test.seawater.io" >> $GITHUB_ENV
+          echo "REACT_APP_MAPBOX_TOKEN=${{ secrets.MAPBOX_TEST_TOKEN }}" >> $GITHUB_ENV
+
+      - name: Run unit tests
+        if: matrix.test-type == 'unit'
+        run: npm run test:unit
+
+      - name: Run integration tests
+        if: matrix.test-type == 'integration'
+        run: npm run test:integration
+
+      - name: Run frontend tests
+        if: matrix.test-type == 'frontend'
+        run: npm run test:frontend
+
+      - name: Run backend tests
+        if: matrix.test-type == 'backend'
+        run: npm run test:backend
+
+      - name: Run security tests
+        if: matrix.test-type == 'security'
+        run: npm run test:security
+
+      - name: Upload coverage to Codecov
+        if: matrix.test-type == 'unit'
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+          flags: ${{ matrix.test-type }}
+          name: codecov-${{ matrix.test-type }}
+
+  # Data Quality and External API Tests
+  data-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run data quality tests
+        run: npm run test:data-quality
+        env:
+          FEMA_API_KEY: ${{ secrets.FEMA_API_KEY }}
+          FIRST_STREET_API_KEY: ${{ secrets.FIRST_STREET_API_KEY }}
+          CLIMATE_CHECK_API_KEY: ${{ secrets.CLIMATE_CHECK_API_KEY }}
+
+      - name: Test external API integrations
+        run: npm run test:external-apis
+        env:
+          FEMA_API_KEY: ${{ secrets.FEMA_API_KEY }}
+          FIRST_STREET_API_KEY: ${{ secrets.FIRST_STREET_API_KEY }}
+          CLIMATE_CHECK_API_KEY: ${{ secrets.CLIMATE_CHECK_API_KEY }}
+
+  # End-to-End Testing
+  e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+        env:
+          BASE_URL: ${{ github.event_name == 'pull_request' && 'https://pr-preview.seawater.io' || 'https://staging.seawater.io' }}
+
+      - name: Upload E2E test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-test-results
+          path: test-results/
+          retention-days: 7
+
+  # Performance Testing
+  performance-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'performance')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run load tests
+        run: npm run test:load
+        env:
+          TARGET_URL: https://staging.seawater.io
+
+      - name: Run lighthouse performance audit
+        run: npm run test:performance
+
+      - name: Upload performance reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-reports
+          path: test-results/performance-report.json
+          retention-days: 30
+
+  # Build and Deploy to Staging
+  build-and-deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [code-quality, test-suite, data-quality]
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+        env:
+          REACT_APP_API_BASE_URL: https://api-staging.seawater.io
+          REACT_APP_MAPBOX_TOKEN: ${{ secrets.MAPBOX_STAGING_TOKEN }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to staging S3
+        run: |
+          aws s3 sync build/ s3://seawater-staging-frontend --delete
+          aws cloudfront create-invalidation --distribution-id ${{ secrets.STAGING_CLOUDFRONT_ID }} --paths "/*"
+
+      - name: Deploy Lambda functions to staging
+        run: |
+          cd infrastructure
+          sam build
+          sam deploy --config-env staging --no-confirm-changeset --no-fail-on-empty-changeset
+
+      - name: Run smoke tests against staging
+        run: npm run test:smoke
+        env:
+          BASE_URL: https://staging.seawater.io
+
+  # Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Snyk security scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+      - name: Run CodeQL analysis
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v2
+
+  # Production Deployment
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [code-quality, test-suite, data-quality, e2e-tests, build-and-deploy-staging]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build for production
+        run: npm run build
+        env:
+          REACT_APP_API_BASE_URL: https://api.seawater.io
+          REACT_APP_MAPBOX_TOKEN: ${{ secrets.MAPBOX_PRODUCTION_TOKEN }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_PRODUCTION_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_PRODUCTION_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to production S3
+        run: |
+          aws s3 sync build/ s3://seawater-production-frontend --delete
+          aws cloudfront create-invalidation --distribution-id ${{ secrets.PRODUCTION_CLOUDFRONT_ID }} --paths "/*"
+
+      - name: Deploy Lambda functions to production
+        run: |
+          cd infrastructure
+          sam build
+          sam deploy --config-env production --no-confirm-changeset --no-fail-on-empty-changeset
+
+      - name: Run production smoke tests
+        run: npm run test:smoke
+        env:
+          BASE_URL: https://seawater.io
+
+      - name: Create GitHub release
+        if: success()
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Production Release v${{ github.run_number }}
+          body: |
+            Automated production deployment from commit ${{ github.sha }}
+            
+            Changes included in this release:
+            ${{ github.event.head_commit.message }}
+          draft: false
+          prerelease: false
+
+  # Nightly Data Quality Checks
+  nightly-data-quality:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run comprehensive data quality tests
+        run: npm run test:nightly
+        env:
+          FEMA_API_KEY: ${{ secrets.FEMA_API_KEY }}
+          FIRST_STREET_API_KEY: ${{ secrets.FIRST_STREET_API_KEY }}
+          CLIMATE_CHECK_API_KEY: ${{ secrets.CLIMATE_CHECK_API_KEY }}
+
+      - name: Generate data quality report
+        run: |
+          echo "## Nightly Data Quality Report" > data-quality-report.md
+          echo "Date: $(date)" >> data-quality-report.md
+          echo "" >> data-quality-report.md
+          cat test-results/data-quality-summary.json >> data-quality-report.md
+
+      - name: Post results to Slack
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          channel: '#seawater-alerts'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          text: 'Nightly data quality tests failed! Check the pipeline for details.'
+
+  # Cleanup
+  cleanup:
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [test-suite, e2e-tests, performance-tests]
+    
+    steps:
+      - name: Clean up test artifacts
+        run: |
+          npm run test:clean || true
+          
+      - name: Archive test results
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-failure-logs
+          path: |
+            test-results/
+            coverage/
+          retention-days: 14

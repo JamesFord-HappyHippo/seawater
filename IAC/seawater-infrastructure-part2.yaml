@@ -1,0 +1,664 @@
+# Continuation of seawater-infrastructure.yaml
+# This is part 2 of the template - merge with part 1 for complete infrastructure
+
+  # ==================== SECRETS MANAGER ====================
+  # Database Credentials
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-database-credentials'
+      Description: 'Database credentials for Seawater platform'
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DatabaseUsername}"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-secret'
+
+  # API Keys Secret
+  APIKeysSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-api-keys'
+      Description: 'API keys for external services (FEMA, First Street, etc.)'
+      SecretString: !Sub |
+        {
+          "mapbox_token": "",
+          "fema_api_key": "",
+          "first_street_api_key": "",
+          "climate_check_api_key": "",
+          "jwt_secret": ""
+        }
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-api-keys'
+
+  # ==================== LAMBDA FUNCTIONS ====================
+  # Risk Score Aggregator Function
+  RiskAggregatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-risk-aggregator'
+      CodeUri: ../src/lambda/risk-aggregator/
+      Handler: index.handler
+      Description: 'Aggregates climate risk scores from multiple data sources'
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: 30
+      ReservedConcurrencyLimit: !Ref MaxLambdaConcurrency
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnetA
+          - !Ref PrivateSubnetB
+      Environment:
+        Variables:
+          DATABASE_SECRET_ARN: !Ref DatabaseSecret
+          API_KEYS_SECRET_ARN: !Ref APIKeysSecret
+          ASSETS_BUCKET: !Ref AssetsBucket
+          DATA_BUCKET: !Ref DataBucket
+      Events:
+        RiskScoreAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /risk/property
+            Method: GET
+        RiskCompareAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /risk/compare
+            Method: GET
+        RiskTrendsAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /risk/trends/{location}
+            Method: GET
+      Tags:
+        Environment: !Ref Environment
+        Function: RiskAggregation
+
+  # Geographic Data Processor Function
+  GeographicProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-geographic-processor'
+      CodeUri: ../src/lambda/geographic-processor/
+      Handler: index.handler
+      Description: 'Handles geocoding and spatial queries'
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: 45
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnetA
+          - !Ref PrivateSubnetB
+      Environment:
+        Variables:
+          DATABASE_SECRET_ARN: !Ref DatabaseSecret
+          API_KEYS_SECRET_ARN: !Ref APIKeysSecret
+      Events:
+        GeocodeAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /geocode
+            Method: POST
+        SpatialNearbyAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /spatial/nearby/{lat}/{lng}
+            Method: GET
+        SpatialBoundaryAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /spatial/boundary/{type}/{id}
+            Method: GET
+      Tags:
+        Environment: !Ref Environment
+        Function: GeographicProcessing
+
+  # FEMA Data Sync Function
+  FEMADataSyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-fema-sync'
+      CodeUri: ../src/lambda/fema-sync/
+      Handler: index.handler
+      Description: 'Synchronizes FEMA data sources'
+      MemorySize: 1024
+      Timeout: 900  # 15 minutes for batch operations
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnetA
+          - !Ref PrivateSubnetB
+      Environment:
+        Variables:
+          DATABASE_SECRET_ARN: !Ref DatabaseSecret
+          API_KEYS_SECRET_ARN: !Ref APIKeysSecret
+          DATA_BUCKET: !Ref DataBucket
+      Events:
+        DailySync:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 2 * * ? *)'  # 2 AM daily
+            Description: 'Daily FEMA data synchronization'
+        WeeklySync:
+          Type: Schedule
+          Properties:
+            Schedule: 'cron(0 1 ? * SUN *)'  # 1 AM Sunday
+            Description: 'Weekly full data refresh'
+      Tags:
+        Environment: !Ref Environment
+        Function: DataSynchronization
+
+  # Premium API Orchestrator Function
+  PremiumOrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-premium-orchestrator'
+      CodeUri: ../src/lambda/premium-orchestrator/
+      Handler: index.handler
+      Description: 'Manages premium data source integrations'
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: 30
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnetA
+          - !Ref PrivateSubnetB
+      Environment:
+        Variables:
+          DATABASE_SECRET_ARN: !Ref DatabaseSecret
+          API_KEYS_SECRET_ARN: !Ref APIKeysSecret
+          USAGE_TRACKER_TABLE: !Ref UsageTrackerTable
+      Events:
+        PremiumRiskAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /premium/risk/{address}
+            Method: GET
+        PremiumProjectionsAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /premium/projections/{address}
+            Method: GET
+      Tags:
+        Environment: !Ref Environment
+        Function: PremiumOrchestration
+
+  # Professional Directory Function
+  ProfessionalDirectoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-professional-directory'
+      CodeUri: ../src/lambda/professional-directory/
+      Handler: index.handler
+      Description: 'Manages climate professionals directory'
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: 30
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnetA
+          - !Ref PrivateSubnetB
+      Environment:
+        Variables:
+          DATABASE_SECRET_ARN: !Ref DatabaseSecret
+      Events:
+        SearchProfessionalsAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /professionals/search
+            Method: GET
+        GetProfessionalAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /professionals/{id}
+            Method: GET
+        CreateProfessionalAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /professionals
+            Method: POST
+      Tags:
+        Environment: !Ref Environment
+        Function: ProfessionalDirectory
+
+  # ==================== API GATEWAY ====================
+  SeawaterApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-api'
+      StageName: !Ref Environment
+      Description: 'Seawater Climate Risk Platform API'
+      TracingEnabled: true
+      
+      # CORS Configuration
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+        MaxAge: "'600'"
+      
+      # API Gateway Configuration
+      EndpointConfiguration:
+        Type: REGIONAL
+      
+      # Request/Response Logging
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: !Sub |
+          {
+            "requestId": "$context.requestId",
+            "requestTime": "$context.requestTime",
+            "httpMethod": "$context.httpMethod",
+            "resourcePath": "$context.resourcePath",
+            "status": "$context.status",
+            "responseLength": "$context.responseLength",
+            "responseTime": "$context.responseTime",
+            "userAgent": "$context.identity.userAgent",
+            "sourceIp": "$context.identity.sourceIp"
+          }
+      
+      # Throttling
+      ThrottleConfig:
+        RateLimit: !If [IsProduction, 2000, 100]
+        BurstLimit: !If [IsProduction, 5000, 200]
+      
+      # API Key Configuration
+      ApiKeyConfig:
+        ApiKeyRequired: false
+        ApiKeys:
+          - ApiKeyName: !Sub '${ProjectName}-${Environment}-api-key'
+            Description: 'API key for premium features'
+      
+      # Gateway Responses for CORS
+      GatewayResponses:
+        UNAUTHORIZED:
+          StatusCode: 401
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+              Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      
+      Tags:
+        Environment: !Ref Environment
+        Purpose: SeawaterAPI
+
+  # Custom Domain (if provided)
+  ApiCustomDomain:
+    Type: AWS::ApiGateway::DomainName
+    Condition: HasCustomDomain
+    Properties:
+      DomainName: !Ref DomainName
+      RegionalCertificateArn: !Ref CertificateArn
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      SecurityPolicy: TLS_1_2
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-api-domain'
+
+  ApiBasePathMapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    Condition: HasCustomDomain
+    Properties:
+      DomainName: !Ref ApiCustomDomain
+      RestApiId: !Ref SeawaterApi
+      Stage: !Ref Environment
+
+  # ==================== DYNAMODB TABLES ====================
+  # Usage Tracking Table
+  UsageTrackerTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-usage-tracker'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+        - AttributeName: api_endpoint
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: date
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: EndpointUsageIndex
+          KeySchema:
+            - AttributeName: api_endpoint
+              KeyType: HASH
+            - AttributeName: date
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !Condition IsProduction
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-usage-tracker'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Session Management Table
+  SessionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-sessions'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-sessions'
+
+  # ==================== CLOUDWATCH & MONITORING ====================
+  # API Gateway Log Group
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${ProjectName}-${Environment}'
+      RetentionInDays: !If [IsProduction, 30, 7]
+
+  # Lambda Log Groups (will be created automatically, but we can set retention)
+  RiskAggregatorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-${Environment}-risk-aggregator'
+      RetentionInDays: !If [IsProduction, 30, 7]
+
+  GeographicProcessorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-${Environment}-geographic-processor'
+      RetentionInDays: !If [IsProduction, 30, 7]
+
+  FEMADataSyncLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-${Environment}-fema-sync'
+      RetentionInDays: !If [IsProduction, 30, 7]
+
+  # CloudWatch Dashboard
+  SeawaterDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-${Environment}-dashboard'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ApiGateway", "Count", "ApiName", "${ProjectName}-${Environment}-api" ],
+                  [ ".", "Latency", ".", "." ],
+                  [ ".", "4XXError", ".", "." ],
+                  [ ".", "5XXError", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "API Gateway Metrics"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "${ProjectName}-${Environment}-risk-aggregator" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ ".", "Duration", ".", "." ],
+                  [ ".", "ConcurrentExecutions", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Lambda Metrics"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${ProjectName}-${Environment}-db" ],
+                  [ ".", "DatabaseConnections", ".", "." ],
+                  [ ".", "ReadLatency", ".", "." ],
+                  [ ".", "WriteLatency", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "Database Metrics"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/ElastiCache", "CPUUtilization", "CacheClusterId", "${ProjectName}-${Environment}-redis" ],
+                  [ ".", "CacheHits", ".", "." ],
+                  [ ".", "CacheMisses", ".", "." ],
+                  [ ".", "NetworkBytesIn", ".", "." ],
+                  [ ".", "NetworkBytesOut", ".", "." ]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "Redis Cache Metrics"
+              }
+            }
+          ]
+        }
+
+  # SNS Topic for Alerts
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-alerts'
+      DisplayName: 'Seawater Platform Alerts'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-alerts'
+
+  # CloudWatch Alarms
+  HighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-high-latency'
+      AlarmDescription: 'API Gateway latency is too high'
+      MetricName: Latency
+      Namespace: AWS/ApiGateway
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 2000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${ProjectName}-${Environment}-api'
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  DatabaseCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-cpu-high'
+      AlarmDescription: 'Database CPU utilization is too high'
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref SeawaterDatabase
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-lambda-errors'
+      AlarmDescription: 'Lambda function error rate is too high'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub '${ProjectName}-${Environment}-risk-aggregator'
+      AlarmActions:
+        - !Ref AlertsTopic
+
+# ==================== OUTPUTS ====================
+Outputs:
+  VpcId:
+    Description: 'VPC ID'
+    Value: !Ref SeawaterVPC
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-vpc-id'
+
+  PrivateSubnetIds:
+    Description: 'Private subnet IDs'
+    Value: !Join [',', [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-private-subnets'
+
+  DatabaseEndpoint:
+    Description: 'PostgreSQL database endpoint'
+    Value: !GetAtt SeawaterDatabase.Endpoint.Address
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-db-endpoint'
+
+  DatabasePort:
+    Description: 'PostgreSQL database port'
+    Value: !GetAtt SeawaterDatabase.Endpoint.Port
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-db-port'
+
+  RedisEndpoint:
+    Description: 'Redis cluster endpoint'
+    Value: !GetAtt SeawaterRedisCluster.PrimaryEndpoint.Address
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-redis-endpoint'
+
+  ApiGatewayUrl:
+    Description: 'API Gateway URL'
+    Value: !Sub 'https://${SeawaterApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-api-url'
+
+  CloudFrontDistributionUrl:
+    Description: 'CloudFront distribution URL'
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-cdn-url'
+
+  FrontendBucketName:
+    Description: 'Frontend S3 bucket name'
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-frontend-bucket'
+
+  DataBucketName:
+    Description: 'Data S3 bucket name'
+    Value: !Ref DataBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-data-bucket'
+
+  AssetsBucketName:
+    Description: 'Assets S3 bucket name'
+    Value: !Ref AssetsBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-assets-bucket'
+
+  DatabaseSecretArn:
+    Description: 'Database secret ARN'
+    Value: !Ref DatabaseSecret
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-db-secret-arn'
+
+  APIKeysSecretArn:
+    Description: 'API keys secret ARN'
+    Value: !Ref APIKeysSecret
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-api-keys-secret-arn'
+
+  CustomDomainName:
+    Condition: HasCustomDomain
+    Description: 'Custom domain name for API'
+    Value: !Ref DomainName
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-custom-domain'
+
+  DashboardUrl:
+    Description: 'CloudWatch Dashboard URL'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-${Environment}-dashboard'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-dashboard-url'

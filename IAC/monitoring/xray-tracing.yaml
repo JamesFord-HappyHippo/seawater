@@ -1,0 +1,375 @@
+# X-Ray Tracing Configuration for Seawater Platform
+# This template sets up comprehensive distributed tracing
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'X-Ray tracing configuration for Seawater Climate Risk Platform'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, production]
+  
+  ProjectName:
+    Type: String
+    Default: seawater
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+
+Resources:
+  # ==================== X-RAY SERVICE MAP ====================
+  
+  # X-Ray sampling rules for cost optimization
+  XRaySamplingRule:
+    Type: AWS::XRay::SamplingRule
+    Properties:
+      SamplingRule:
+        RuleName: !Sub '${ProjectName}-${Environment}-sampling-rule'
+        Priority: 9000
+        ServiceName: !Sub '${ProjectName}-${Environment}-*'
+        ServiceType: '*'
+        HTTPMethod: '*'
+        URLPath: '*'
+        Version: 1
+        # Sample rates based on environment
+        FixedRate: !If [IsProduction, 0.1, 0.5]  # Production: 10%, Dev/Staging: 50%
+        ReservoirSize: !If [IsProduction, 1, 2]   # Always trace at least 1-2 requests per second
+
+  # High-priority sampling for errors and slow requests
+  XRayErrorSamplingRule:
+    Type: AWS::XRay::SamplingRule
+    Properties:
+      SamplingRule:
+        RuleName: !Sub '${ProjectName}-${Environment}-error-sampling'
+        Priority: 5000
+        ServiceName: !Sub '${ProjectName}-${Environment}-*'
+        ServiceType: '*'
+        HTTPMethod: '*'
+        URLPath: '*'
+        Version: 1
+        FixedRate: 1.0  # Sample 100% of errors
+        ReservoirSize: 5
+        Attributes:
+          error: 'true'
+
+  # Premium features sampling (higher rate for business critical paths)
+  XRayPremiumSamplingRule:
+    Type: AWS::XRay::SamplingRule
+    Properties:
+      SamplingRule:
+        RuleName: !Sub '${ProjectName}-${Environment}-premium-sampling'
+        Priority: 6000
+        ServiceName: !Sub '${ProjectName}-${Environment}-premium-orchestrator'
+        ServiceType: '*'
+        HTTPMethod: '*'
+        URLPath: '/premium/*'
+        Version: 1
+        FixedRate: !If [IsProduction, 0.3, 1.0]  # Production: 30%, Dev/Staging: 100%
+        ReservoirSize: 2
+
+  # ==================== CUSTOM TRACING INSIGHTS ====================
+  
+  # CloudWatch Insights queries for X-Ray analysis
+  XRayInsightsLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-xray-insights'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      MemorySize: 256
+      Timeout: 60
+      Tracing: Active
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+      InlineCode: |
+        const AWS = require('aws-sdk');
+        const xray = new AWS.XRay();
+        const cloudwatch = new AWS.CloudWatch();
+        
+        exports.handler = async (event) => {
+            console.log('X-Ray Insights processing started');
+            
+            try {
+                // Get traces from the last hour
+                const endTime = new Date();
+                const startTime = new Date(endTime.getTime() - 60 * 60 * 1000); // 1 hour ago
+                
+                const traces = await getTraceSummaries(startTime, endTime);
+                const insights = await analyzeTraces(traces);
+                await publishMetrics(insights);
+                
+                return {
+                    statusCode: 200,
+                    body: JSON.stringify({
+                        message: 'X-Ray insights processed successfully',
+                        insights: insights
+                    })
+                };
+            } catch (error) {
+                console.error('Error processing X-Ray insights:', error);
+                throw error;
+            }
+        };
+        
+        async function getTraceSummaries(startTime, endTime) {
+            const params = {
+                TimeRangeType: 'TimeRangeByStartTime',
+                StartTime: startTime,
+                EndTime: endTime,
+                FilterExpression: `service("${process.env.PROJECT_NAME}-${process.env.ENVIRONMENT}")`,
+                SamplingStrategy: {
+                    Name: 'PartialScan',
+                    Value: 0.1
+                }
+            };
+            
+            const result = await xray.getTraceSummaries(params).promise();
+            return result.TraceSummaries;
+        }
+        
+        async function analyzeTraces(traces) {
+            const insights = {
+                totalTraces: traces.length,
+                errorTraces: 0,
+                slowTraces: 0,
+                averageResponseTime: 0,
+                externalApiCalls: {
+                    fema: { count: 0, avgLatency: 0 },
+                    firststreet: { count: 0, avgLatency: 0 },
+                    climatecheck: { count: 0, avgLatency: 0 },
+                    mapbox: { count: 0, avgLatency: 0 }
+                },
+                serviceLatencies: {}
+            };
+            
+            let totalResponseTime = 0;
+            
+            for (const trace of traces) {
+                totalResponseTime += trace.ResponseTime;
+                
+                if (trace.IsError || trace.HasError) {
+                    insights.errorTraces++;
+                }
+                
+                if (trace.ResponseTime > 2.0) { // 2 seconds threshold
+                    insights.slowTraces++;
+                }
+                
+                // Analyze service segments
+                for (const service of trace.ServiceIds || []) {
+                    if (!insights.serviceLatencies[service.Name]) {
+                        insights.serviceLatencies[service.Name] = {
+                            count: 0,
+                            totalTime: 0,
+                            errors: 0
+                        };
+                    }
+                    
+                    insights.serviceLatencies[service.Name].count++;
+                    insights.serviceLatencies[service.Name].totalTime += trace.ResponseTime;
+                    
+                    if (trace.IsError) {
+                        insights.serviceLatencies[service.Name].errors++;
+                    }
+                }
+            }
+            
+            insights.averageResponseTime = traces.length > 0 ? totalResponseTime / traces.length : 0;
+            
+            // Calculate average latencies for services
+            for (const serviceName in insights.serviceLatencies) {
+                const service = insights.serviceLatencies[serviceName];
+                service.avgLatency = service.count > 0 ? service.totalTime / service.count : 0;
+            }
+            
+            return insights;
+        }
+        
+        async function publishMetrics(insights) {
+            const namespace = `Seawater/${process.env.ENVIRONMENT}`;
+            const timestamp = new Date();
+            
+            const metricData = [
+                {
+                    MetricName: 'TracesAnalyzed',
+                    Value: insights.totalTraces,
+                    Unit: 'Count',
+                    Timestamp: timestamp
+                },
+                {
+                    MetricName: 'ErrorTracePercentage',
+                    Value: insights.totalTraces > 0 ? (insights.errorTraces / insights.totalTraces) * 100 : 0,
+                    Unit: 'Percent',
+                    Timestamp: timestamp
+                },
+                {
+                    MetricName: 'SlowTracePercentage',
+                    Value: insights.totalTraces > 0 ? (insights.slowTraces / insights.totalTraces) * 100 : 0,
+                    Unit: 'Percent',
+                    Timestamp: timestamp
+                },
+                {
+                    MetricName: 'AverageResponseTime',
+                    Value: insights.averageResponseTime * 1000, // Convert to milliseconds
+                    Unit: 'Milliseconds',
+                    Timestamp: timestamp
+                }
+            ];
+            
+            // Add service-specific metrics
+            for (const serviceName in insights.serviceLatencies) {
+                const service = insights.serviceLatencies[serviceName];
+                metricData.push({
+                    MetricName: 'ServiceLatency',
+                    Value: service.avgLatency * 1000,
+                    Unit: 'Milliseconds',
+                    Timestamp: timestamp,
+                    Dimensions: [
+                        {
+                            Name: 'ServiceName',
+                            Value: serviceName
+                        }
+                    ]
+                });
+                
+                metricData.push({
+                    MetricName: 'ServiceErrorRate',
+                    Value: service.count > 0 ? (service.errors / service.count) * 100 : 0,
+                    Unit: 'Percent',
+                    Timestamp: timestamp,
+                    Dimensions: [
+                        {
+                            Name: 'ServiceName',
+                            Value: serviceName
+                        }
+                    ]
+                });
+            }
+            
+            // Publish metrics in batches (CloudWatch limit is 20 per call)
+            for (let i = 0; i < metricData.length; i += 20) {
+                const batch = metricData.slice(i, i + 20);
+                await cloudwatch.putMetricData({
+                    Namespace: namespace,
+                    MetricData: batch
+                }).promise();
+            }
+        }
+      Events:
+        ScheduledAnalysis:
+          Type: Schedule
+          Properties:
+            Schedule: 'rate(1 hour)'  # Run every hour
+            Description: 'Analyze X-Ray traces and generate insights'
+
+  # ==================== X-RAY ALARMS ====================
+  
+  HighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-xray-high-error-rate'
+      AlarmDescription: 'High error rate detected in X-Ray traces'
+      MetricName: ErrorTracePercentage
+      Namespace: !Sub 'Seawater/${Environment}'
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !If [IsProduction, 5, 10]  # Production: 5%, Dev/Staging: 10%
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !ImportValue 
+            Fn::Sub: '${ProjectName}-${Environment}-critical-alerts-topic'
+      TreatMissingData: notBreaching
+
+  SlowTraceAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-xray-slow-traces'
+      AlarmDescription: 'High percentage of slow traces detected'
+      MetricName: SlowTracePercentage
+      Namespace: !Sub 'Seawater/${Environment}'
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 20  # 20% of traces are slow
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !ImportValue 
+            Fn::Sub: '${ProjectName}-${Environment}-warning-alerts-topic'
+      TreatMissingData: notBreaching
+
+  # ==================== X-RAY SERVICE MAP ANNOTATIONS ====================
+  
+  ServiceMapAnnotationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-service-annotations'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 30
+      Tracing: Active
+      InlineCode: |
+        // This function demonstrates how to add custom annotations
+        // for better service map visualization
+        const AWSXRay = require('aws-xray-sdk-core');
+        
+        exports.handler = async (event) => {
+            const segment = AWSXRay.getSegment();
+            
+            // Add custom annotations for filtering and search
+            segment.addAnnotation('environment', process.env.ENVIRONMENT);
+            segment.addAnnotation('service_type', 'climate_risk');
+            segment.addAnnotation('feature', event.feature || 'general');
+            
+            // Add metadata for additional context
+            segment.addMetadata('request_info', {
+                user_tier: event.user_tier || 'free',
+                request_id: event.requestId || 'unknown',
+                api_version: 'v1'
+            });
+            
+            // Example subsegment for external API call
+            const subsegment = segment.addNewSubsegment('external_api_call');
+            subsegment.addAnnotation('api_provider', event.api_provider || 'unknown');
+            subsegment.addAnnotation('api_endpoint', event.api_endpoint || 'unknown');
+            
+            try {
+                // Simulate external API call
+                await new Promise(resolve => setTimeout(resolve, 100));
+                subsegment.close();
+            } catch (error) {
+                subsegment.close(error);
+                throw error;
+            }
+            
+            return {
+                statusCode: 200,
+                body: JSON.stringify({
+                    message: 'Service annotations added successfully'
+                })
+            };
+        };
+
+Outputs:
+  XRaySamplingRuleArn:
+    Description: 'ARN of the X-Ray sampling rule'
+    Value: !GetAtt XRaySamplingRule.RuleArn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-xray-sampling-rule'
+
+  XRayInsightsFunctionArn:
+    Description: 'ARN of the X-Ray insights function'
+    Value: !GetAtt XRayInsightsLambdaFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-xray-insights-function'
+
+  ServiceMapUrl:
+    Description: 'URL to view the X-Ray service map'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/xray/home?region=${AWS::Region}#/service-map'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-xray-service-map-url'

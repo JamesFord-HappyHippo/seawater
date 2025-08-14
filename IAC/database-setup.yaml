@@ -1,0 +1,252 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: 'Seawater PostgreSQL Database with PostGIS - Separate stack for reusability'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.r5.large
+    Description: RDS instance class
+  
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 1000
+    Description: Database allocated storage in GB
+  
+  DBUsername:
+    Type: String
+    Default: postgres
+    Description: Database master username
+  
+  DBPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Default: TempPassword123!
+    Description: Database master password (min 8 characters)
+
+Resources:
+
+  # VPC for Database (minimal setup)
+  SeawaterVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-VPC'
+
+  # Database Subnets (Multi-AZ)
+  DatabaseSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-DB-Subnet-1'
+
+  DatabaseSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-DB-Subnet-2'
+
+  # Internet Gateway (for Lambda to access external APIs)
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-IGW'
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Route Table for Lambda access to internet
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-Public-Routes'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  DatabaseSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DatabaseSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  DatabaseSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DatabaseSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Security Groups
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub 'Seawater-${Environment}-DB-SG'
+      GroupDescription: Security group for PostgreSQL database
+      VpcId: !Ref SeawaterVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          Description: Access from Lambda functions
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+          Description: Temporary public access (remove in production)
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-DB-SG'
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub 'Seawater-${Environment}-Lambda-SG'
+      GroupDescription: Security group for Lambda functions
+      VpcId: !Ref SeawaterVPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-Lambda-SG'
+
+  # DB Subnet Group
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub 'seawater-${Environment}-db-subnet-group'
+      DBSubnetGroupDescription: Subnet group for Seawater PostgreSQL database
+      SubnetIds:
+        - !Ref DatabaseSubnet1
+        - !Ref DatabaseSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-DB-SubnetGroup'
+
+  # PostgreSQL Database with PostGIS
+  SeawaterDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub 'seawater-${Environment}-db'
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: '15.4'
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp2
+      StorageEncrypted: true
+      
+      # Database Configuration
+      DBName: seawater
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      Port: 5432
+      
+      # Network Configuration
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      PubliclyAccessible: true  # For development only
+      
+      # Backup and Maintenance
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      
+      # Performance
+      MultiAZ: false  # Single AZ for dev to save costs
+      MonitoringInterval: 0  # Disable enhanced monitoring for dev
+      
+      # PostGIS Extension (will be added manually after creation)
+      EnableCloudwatchLogsExports:
+        - postgresql
+      
+      Tags:
+        - Key: Name
+          Value: !Sub 'Seawater-${Environment}-Database'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  DatabaseEndpoint:
+    Description: 'PostgreSQL database endpoint'
+    Value: !GetAtt SeawaterDatabase.Endpoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabaseEndpoint'
+
+  DatabasePort:
+    Description: 'PostgreSQL database port'
+    Value: !GetAtt SeawaterDatabase.Endpoint.Port
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabasePort'
+
+  DatabaseName:
+    Description: 'Database name'
+    Value: seawater
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabaseName'
+
+  VPCId:
+    Description: 'VPC ID for Lambda functions'
+    Value: !Ref SeawaterVPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCId'
+
+  LambdaSecurityGroupId:
+    Description: 'Security Group ID for Lambda functions'
+    Value: !Ref LambdaSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaSecurityGroupId'
+
+  DatabaseSubnetIds:
+    Description: 'Database subnet IDs for Lambda VPC configuration'
+    Value: !Sub '${DatabaseSubnet1},${DatabaseSubnet2}'
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabaseSubnetIds'
+
+  DatabaseConnectionString:
+    Description: 'Full database connection string template'
+    Value: !Sub 'postgresql://${DBUsername}:${DBPassword}@${SeawaterDatabase.Endpoint.Address}:${SeawaterDatabase.Endpoint.Port}/seawater'
+    Export:
+      Name: !Sub '${AWS::StackName}-ConnectionString'

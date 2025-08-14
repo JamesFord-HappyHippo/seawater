@@ -1,0 +1,350 @@
+{
+  "success": true,
+  "requestId": "req_2025081312345_orleans_ma",
+  "timestamp": "2025-08-13T16:45:32.123Z",
+  "processingTime": 1847,
+  "data": {
+    "property": {
+      "address": "48 Tonset Rd, Orleans, MA 02653",
+      "normalizedAddress": "48 Tonset Road Orleans MA 02653",
+      "location": {
+        "latitude": 41.7901,
+        "longitude": -69.9892,
+        "elevation": {
+          "feet": 12,
+          "meters": 3.7
+        },
+        "geocodingAccuracy": "rooftop",
+        "geocodingSource": "mapbox"
+      },
+      "administrativeInfo": {
+        "city": "Orleans",
+        "state": "MA",
+        "county": "Barnstable County",
+        "zipCode": "02653",
+        "fipsCode": "25001",
+        "timezone": "America/New_York"
+      },
+      "propertyType": "residential",
+      "coastalProximity": {
+        "distanceToCoast": {
+          "miles": 0.8,
+          "kilometers": 1.3
+        },
+        "coastalZone": "Atlantic Ocean - Cape Cod Bay"
+      }
+    },
+    "riskAssessment": {
+      "overall": {
+        "score": 72,
+        "category": "HIGH",
+        "primaryConcerns": ["coastal_flooding", "hurricane", "erosion"],
+        "riskTrend": "increasing",
+        "confidence": 0.89
+      },
+      "detailedRisks": {
+        "floodRisk": {
+          "score": 78,
+          "category": "HIGH",
+          "details": {
+            "femaFloodZone": "AE",
+            "baseFloodElevation": {
+              "feet": 8,
+              "meters": 2.4
+            },
+            "floodInsuranceRequired": true,
+            "annualFloodProbability": 0.012,
+            "stormSurgeRisk": "HIGH",
+            "seaLevelRiseImpact": "SIGNIFICANT",
+            "projectedChange30Year": "+15%"
+          },
+          "description": "High coastal flood risk due to proximity to Cape Cod Bay and Atlantic Ocean. Property is in FEMA flood zone AE with mandatory flood insurance requirements."
+        },
+        "hurricaneRisk": {
+          "score": 81,
+          "category": "HIGH", 
+          "details": {
+            "historicalHurricanes": 23,
+            "averageReturnPeriod": 8.5,
+            "windRiskScore": 75,
+            "stormSurgeRiskScore": 88,
+            "lastMajorEvent": "Hurricane Bob (1991)",
+            "typicalSeason": "June - November",
+            "projectedChange30Year": "+12%"
+          },
+          "description": "Cape Cod location experiences regular hurricane impacts with significant storm surge risk from multiple directions."
+        },
+        "wildfireRisk": {
+          "score": 15,
+          "category": "VERY_LOW",
+          "details": {
+            "vegetationRisk": "LOW",
+            "historicalFires": 0,
+            "defensibleSpace": "ADEQUATE",
+            "fireSeasonLength": 45,
+            "projectedChange30Year": "+5%"
+          },
+          "description": "Very low wildfire risk due to coastal location and limited fire-prone vegetation."
+        },
+        "earthquakeRisk": {
+          "score": 25,
+          "category": "LOW",
+          "details": {
+            "peakGroundAcceleration": 0.08,
+            "probabilisticRisk": "LOW",
+            "historicalSeismicity": "MINIMAL",
+            "soilLiquefactionRisk": "MODERATE",
+            "buildingCodeZone": "Zone 1",
+            "projectedChange30Year": "0%"
+          },
+          "description": "Low earthquake risk typical of New England region with minimal historical seismic activity."
+        },
+        "heatRisk": {
+          "score": 45,
+          "category": "MODERATE",
+          "details": {
+            "extremeHeatDays": 8,
+            "heatWaveFrequency": 2.1,
+            "coolingDegreeDays": 542,
+            "temperatureTrend": "INCREASING",
+            "urbanHeatIsland": "MINIMAL",
+            "projectedChange30Year": "+25%"
+          },
+          "description": "Moderate heat risk with increasing summer temperatures. Coastal location provides some moderation."
+        },
+        "droughtRisk": {
+          "score": 38,
+          "category": "MODERATE",
+          "details": {
+            "averagePrecipitation": 47.2,
+            "seasonalVariability": "MODERATE",
+            "groundwaterStress": "LOW",
+            "irrigationDemand": "SEASONAL",
+            "projectedChange30Year": "+8%"
+          },
+          "description": "Moderate drought risk with adequate precipitation but seasonal variations affecting water supply."
+        },
+        "tornadoRisk": {
+          "score": 22,
+          "category": "LOW",
+          "details": {
+            "historicalTornadoes": 3,
+            "averageReturnPeriod": 45,
+            "maxHistoricalIntensity": "F1",
+            "seasonalPeak": "May - July",
+            "projectedChange30Year": "+3%"
+          },
+          "description": "Low tornado risk with infrequent, typically weak tornadoes in the region."
+        },
+        "coastalErosion": {
+          "score": 85,
+          "category": "VERY_HIGH",
+          "details": {
+            "erosionRate": {
+              "feetPerYear": 1.2,
+              "metersPerYear": 0.37
+            },
+            "shorelinePosition": "RETREATING",
+            "seaLevelRise": {
+              "millimetersPerYear": 3.2,
+              "inchesPerYear": 0.13
+            },
+            "stormDamageHistory": "SIGNIFICANT",
+            "beachNourishment": "PERIODIC",
+            "projectedChange30Year": "+35%"
+          },
+          "description": "Very high coastal erosion risk due to Cape Cod's sandy composition and accelerating sea level rise."
+        }
+      }
+    },
+    "climateProjections": {
+      "temperature": {
+        "currentAverage": {
+          "summer": {
+            "celsius": 21.8,
+            "fahrenheit": 71.2
+          },
+          "winter": {
+            "celsius": 1.2,
+            "fahrenheit": 34.2
+          },
+          "annual": {
+            "celsius": 11.1,
+            "fahrenheit": 52.0
+          }
+        },
+        "projectedChange30Year": {
+          "summer": {
+            "celsius": "+2.3",
+            "fahrenheit": "+4.1"
+          },
+          "winter": {
+            "celsius": "+2.8",
+            "fahrenheit": "+5.0"
+          },
+          "annual": {
+            "celsius": "+2.1",
+            "fahrenheit": "+3.8"
+          }
+        },
+        "extremeHeatDays": {
+          "current": 8,
+          "projected2055": 18
+        }
+      },
+      "precipitation": {
+        "currentAverage": {
+          "millimeters": 1198,
+          "inches": 47.2
+        },
+        "projectedChange30Year": {
+          "millimeters": "+125",
+          "inches": "+4.9"
+        },
+        "seasonalChanges": {
+          "winter": "+15%",
+          "spring": "+8%", 
+          "summer": "-5%",
+          "fall": "+12%"
+        },
+        "extremePrecipitationEvents": "+22%"
+      },
+      "seaLevel": {
+        "currentRate": {
+          "millimetersPerYear": 3.2,
+          "inchesPerYear": 0.13
+        },
+        "projectedRise30Year": {
+          "meters": "0.3-0.6",
+          "feet": "1.0-2.0",
+          "inches": "12-24"
+        },
+        "highTideFlooding": {
+          "currentDays": 4,
+          "projected2055": 15
+        }
+      }
+    },
+    "insurance": {
+      "floodInsurance": {
+        "required": true,
+        "estimatedPremium": 2850,
+        "zone": "AE",
+        "coverage": {
+          "building": 250000,
+          "contents": 100000
+        }
+      },
+      "windstormInsurance": {
+        "recommended": true,
+        "estimatedPremium": 1200,
+        "deductible": "2% of dwelling value",
+        "hurricaneDeductible": "5% of dwelling value"
+      },
+      "totalEstimatedPremium": 4050,
+      "riskFactors": [
+        "Coastal location",
+        "FEMA flood zone AE", 
+        "Hurricane exposure",
+        "Erosion risk"
+      ]
+    },
+    "mitigationRecommendations": [
+      {
+        "category": "FLOOD_PROTECTION",
+        "priority": "HIGH",
+        "action": "Elevate utilities above base flood elevation",
+        "estimatedCost": "5000-15000",
+        "potentialSavings": "Up to 30% on flood insurance premiums",
+        "timeframe": "1-2 months"
+      },
+      {
+        "category": "HURRICANE_PREPARATION", 
+        "priority": "HIGH",
+        "action": "Install hurricane shutters or impact-resistant windows",
+        "estimatedCost": "8000-20000",
+        "potentialSavings": "10-15% on wind insurance premiums",
+        "timeframe": "2-3 months"
+      },
+      {
+        "category": "COASTAL_PROTECTION",
+        "priority": "MODERATE",
+        "action": "Consider living shoreline stabilization",
+        "estimatedCost": "15000-40000",
+        "potentialSavings": "Long-term property value protection",
+        "timeframe": "3-6 months"
+      },
+      {
+        "category": "EMERGENCY_PREPAREDNESS",
+        "priority": "HIGH", 
+        "action": "Develop evacuation plan and emergency kit",
+        "estimatedCost": "500-1500",
+        "potentialSavings": "Life safety and reduced recovery costs",
+        "timeframe": "1 week"
+      }
+    ],
+    "localRegulations": {
+      "buildingCodes": {
+        "floodResistant": "Required for new construction in flood zones",
+        "windResistant": "150 mph design wind speed required",
+        "seismicDesign": "Minimal requirements (low seismic zone)"
+      },
+      "zoning": {
+        "coastalSetbacks": "100 feet from mean high water mark",
+        "heightRestrictions": "35 feet maximum for residential",
+        "densityLimits": "Low-density residential zoning"
+      },
+      "environmental": {
+        "wetlandsProtection": "Massachusetts Wetlands Protection Act applies",
+        "coastalZoneManagement": "Subject to Chapter 91 waterways licensing",
+        "stormwaterManagement": "Required for new development"
+      }
+    }
+  },
+  "dataQuality": {
+    "completeness": 0.92,
+    "confidence": 0.89,
+    "lastUpdated": "2025-08-13T12:00:00.000Z",
+    "dataSources": [
+      {
+        "name": "FEMA National Risk Index",
+        "version": "2023",
+        "confidence": 0.91,
+        "lastRefresh": "2025-08-12T14:30:00.000Z"
+      },
+      {
+        "name": "NOAA Sea Level Rise Viewer",
+        "version": "2024", 
+        "confidence": 0.88,
+        "lastRefresh": "2025-08-13T08:15:00.000Z"
+      },
+      {
+        "name": "Massachusetts Coastal Zone Management",
+        "version": "2024",
+        "confidence": 0.85,
+        "lastRefresh": "2025-08-10T16:45:00.000Z"
+      },
+      {
+        "name": "MapBox Geocoding",
+        "version": "v5",
+        "confidence": 0.95,
+        "lastRefresh": "2025-08-13T16:45:32.000Z"
+      },
+      {
+        "name": "USGS National Water Information System",
+        "version": "2024",
+        "confidence": 0.87,
+        "lastRefresh": "2025-08-13T06:00:00.000Z"
+      }
+    ]
+  },
+  "disclaimer": "This assessment is based on available data and models. Actual risks may vary. This information is for educational purposes and should not be the sole basis for insurance, investment, or safety decisions. Consult with local experts and officials for property-specific guidance.",
+  "metadata": {
+    "assessmentId": "sea_20250813_orleans_ma_48tonset",
+    "version": "1.0.0",
+    "processingLocation": "us-east-2",
+    "billingTier": "free",
+    "cacheHit": false,
+    "expiresAt": "2025-09-13T16:45:32.123Z"
+  }
+}

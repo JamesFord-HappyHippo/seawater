@@ -1,0 +1,381 @@
+name: Database Backup
+
+on:
+  schedule:
+    # Daily backup at 2 AM UTC for production
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to backup'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      backup_type:
+        description: 'Type of backup'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+          - full
+          - schema-only
+          - data-only
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: seawater
+
+jobs:
+  backup-database:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
+
+      - name: Set environment variables
+        run: |
+          ENV="${{ github.event.inputs.environment || 'production' }}"
+          echo "ENVIRONMENT=$ENV" >> $GITHUB_ENV
+          echo "BACKUP_TYPE=${{ github.event.inputs.backup_type || 'full' }}" >> $GITHUB_ENV
+
+      - name: Get database credentials
+        run: |
+          # Get database endpoint
+          DB_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name "${PROJECT_NAME}-${ENVIRONMENT}" \
+            --query "Stacks[0].Outputs[?OutputKey=='DatabaseEndpoint'].OutputValue" \
+            --output text \
+            --region "$AWS_REGION")
+          
+          DB_PORT=$(aws cloudformation describe-stacks \
+            --stack-name "${PROJECT_NAME}-${ENVIRONMENT}" \
+            --query "Stacks[0].Outputs[?OutputKey=='DatabasePort'].OutputValue" \
+            --output text \
+            --region "$AWS_REGION")
+          
+          # Get database secret ARN
+          SECRET_ARN=$(aws cloudformation describe-stacks \
+            --stack-name "${PROJECT_NAME}-${ENVIRONMENT}" \
+            --query "Stacks[0].Outputs[?OutputKey=='DatabaseSecretArn'].OutputValue" \
+            --output text \
+            --region "$AWS_REGION")
+          
+          # Retrieve database credentials from Secrets Manager
+          DB_CREDENTIALS=$(aws secretsmanager get-secret-value \
+            --secret-id "$SECRET_ARN" \
+            --query SecretString \
+            --output text)
+          
+          DB_USERNAME=$(echo "$DB_CREDENTIALS" | jq -r .username)
+          DB_PASSWORD=$(echo "$DB_CREDENTIALS" | jq -r .password)
+          
+          echo "DB_HOST=$DB_ENDPOINT" >> $GITHUB_ENV
+          echo "DB_PORT=$DB_PORT" >> $GITHUB_ENV
+          echo "DB_USER=$DB_USERNAME" >> $GITHUB_ENV
+          echo "::add-mask::$DB_PASSWORD"
+          echo "DB_PASSWORD=$DB_PASSWORD" >> $GITHUB_ENV
+
+      - name: Test database connection
+        run: |
+          export PGPASSWORD="$DB_PASSWORD"
+          
+          echo "Testing connection to $DB_HOST:$DB_PORT"
+          pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d seawater
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Database connection successful"
+          else
+            echo "❌ Database connection failed"
+            exit 1
+          fi
+
+      - name: Create database backup
+        run: |
+          export PGPASSWORD="$DB_PASSWORD"
+          
+          # Set backup options based on type
+          BACKUP_OPTIONS=""
+          BACKUP_SUFFIX=""
+          
+          case "$BACKUP_TYPE" in
+            "schema-only")
+              BACKUP_OPTIONS="--schema-only"
+              BACKUP_SUFFIX="_schema"
+              ;;
+            "data-only")
+              BACKUP_OPTIONS="--data-only"
+              BACKUP_SUFFIX="_data"
+              ;;
+            *)
+              BACKUP_OPTIONS=""
+              BACKUP_SUFFIX=""
+              ;;
+          esac
+          
+          # Create backup filename
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          BACKUP_FILENAME="${PROJECT_NAME}_${ENVIRONMENT}_${TIMESTAMP}${BACKUP_SUFFIX}.sql"
+          
+          echo "Creating backup: $BACKUP_FILENAME"
+          echo "Backup type: $BACKUP_TYPE"
+          echo "Options: $BACKUP_OPTIONS"
+          
+          # Create backup
+          pg_dump \
+            --host="$DB_HOST" \
+            --port="$DB_PORT" \
+            --username="$DB_USER" \
+            --dbname=seawater \
+            --format=plain \
+            --no-owner \
+            --no-privileges \
+            --clean \
+            --if-exists \
+            --create \
+            --encoding=UTF8 \
+            --verbose \
+            $BACKUP_OPTIONS \
+            --file="$BACKUP_FILENAME"
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Backup created successfully"
+            ls -lh "$BACKUP_FILENAME"
+          else
+            echo "❌ Backup creation failed"
+            exit 1
+          fi
+          
+          # Compress backup
+          gzip "$BACKUP_FILENAME"
+          COMPRESSED_FILENAME="${BACKUP_FILENAME}.gz"
+          
+          echo "BACKUP_FILE=$COMPRESSED_FILENAME" >> $GITHUB_ENV
+          echo "BACKUP_SIZE=$(du -h $COMPRESSED_FILENAME | cut -f1)" >> $GITHUB_ENV
+
+      - name: Upload backup to S3
+        run: |
+          S3_BUCKET="${PROJECT_NAME}-${ENVIRONMENT}-backups-${{ secrets.AWS_ACCOUNT_ID }}"
+          S3_KEY="database-backups/${ENVIRONMENT}/$(basename $BACKUP_FILE)"
+          
+          echo "Uploading backup to S3: s3://$S3_BUCKET/$S3_KEY"
+          
+          # Create bucket if it doesn't exist
+          aws s3api head-bucket --bucket "$S3_BUCKET" 2>/dev/null || {
+            echo "Creating S3 bucket: $S3_BUCKET"
+            aws s3 mb "s3://$S3_BUCKET" --region "$AWS_REGION"
+            
+            # Enable versioning
+            aws s3api put-bucket-versioning \
+              --bucket "$S3_BUCKET" \
+              --versioning-configuration Status=Enabled
+            
+            # Set lifecycle policy
+            cat > lifecycle.json << EOF
+          {
+            "Rules": [
+              {
+                "ID": "DatabaseBackupLifecycle",
+                "Status": "Enabled",
+                "Filter": {
+                  "Prefix": "database-backups/"
+                },
+                "Transitions": [
+                  {
+                    "Days": 30,
+                    "StorageClass": "STANDARD_IA"
+                  },
+                  {
+                    "Days": 90,
+                    "StorageClass": "GLACIER"
+                  },
+                  {
+                    "Days": 365,
+                    "StorageClass": "DEEP_ARCHIVE"
+                  }
+                ],
+                "Expiration": {
+                  "Days": 2555
+                }
+              }
+            ]
+          }
+          EOF
+            
+            aws s3api put-bucket-lifecycle-configuration \
+              --bucket "$S3_BUCKET" \
+              --lifecycle-configuration file://lifecycle.json
+          }
+          
+          # Upload backup with metadata
+          aws s3 cp "$BACKUP_FILE" "s3://$S3_BUCKET/$S3_KEY" \
+            --storage-class STANDARD_IA \
+            --metadata \
+              "environment=$ENVIRONMENT,backup-type=$BACKUP_TYPE,created-date=$(date -Iseconds),database-version=postgresql-15,postgis-enabled=true"
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Backup uploaded to S3 successfully"
+            echo "S3_LOCATION=s3://$S3_BUCKET/$S3_KEY" >> $GITHUB_ENV
+          else
+            echo "❌ Failed to upload backup to S3"
+            exit 1
+          fi
+
+      - name: Verify backup integrity
+        run: |
+          echo "Verifying backup integrity..."
+          
+          # Download backup from S3 to verify
+          TEMP_BACKUP="temp_$(basename $BACKUP_FILE)"
+          aws s3 cp "$S3_LOCATION" "$TEMP_BACKUP"
+          
+          # Check if file is a valid gzip
+          if gzip -t "$TEMP_BACKUP"; then
+            echo "✅ Backup file is a valid gzip archive"
+          else
+            echo "❌ Backup file is corrupted"
+            exit 1
+          fi
+          
+          # Check SQL content (first few lines)
+          echo "Backup content preview:"
+          gunzip -c "$TEMP_BACKUP" | head -20
+          
+          # Verify PostgreSQL dump format
+          if gunzip -c "$TEMP_BACKUP" | head -1 | grep -q "PostgreSQL database dump"; then
+            echo "✅ Backup contains valid PostgreSQL dump"
+          else
+            echo "❌ Backup does not appear to be a valid PostgreSQL dump"
+            exit 1
+          fi
+          
+          rm "$TEMP_BACKUP"
+
+      - name: Update backup inventory
+        run: |
+          INVENTORY_FILE="backup-inventory-${ENVIRONMENT}.json"
+          
+          # Download existing inventory or create new
+          aws s3 cp "s3://${PROJECT_NAME}-${ENVIRONMENT}-backups-${{ secrets.AWS_ACCOUNT_ID }}/inventory/$INVENTORY_FILE" . 2>/dev/null || echo '{"backups": []}' > "$INVENTORY_FILE"
+          
+          # Add new backup to inventory
+          BACKUP_INFO=$(cat << EOF
+          {
+            "filename": "$(basename $BACKUP_FILE)",
+            "s3_location": "$S3_LOCATION",
+            "size": "$BACKUP_SIZE",
+            "backup_type": "$BACKUP_TYPE",
+            "environment": "$ENVIRONMENT",
+            "created_at": "$(date -Iseconds)",
+            "database_host": "$DB_HOST",
+            "postgresql_version": "15",
+            "postgis_enabled": true,
+            "checksum": "$(md5sum $BACKUP_FILE | cut -d' ' -f1)"
+          }
+          EOF
+          )
+          
+          # Update inventory
+          jq --argjson backup "$BACKUP_INFO" '.backups += [$backup] | .backups |= sort_by(.created_at) | .backups |= .[-50:]' "$INVENTORY_FILE" > temp_inventory.json
+          mv temp_inventory.json "$INVENTORY_FILE"
+          
+          # Upload updated inventory
+          aws s3 cp "$INVENTORY_FILE" "s3://${PROJECT_NAME}-${ENVIRONMENT}-backups-${{ secrets.AWS_ACCOUNT_ID }}/inventory/$INVENTORY_FILE"
+
+      - name: Cleanup old backups
+        run: |
+          echo "Cleaning up old local backups..."
+          
+          # Remove local backup file
+          rm -f "$BACKUP_FILE"
+          
+          # Cleanup old S3 backups (keep last 30 days for daily, 12 weeks for weekly)
+          CUTOFF_DATE=$(date -d '30 days ago' +%Y%m%d)
+          
+          echo "Cleaning up S3 backups older than $CUTOFF_DATE"
+          
+          aws s3api list-objects-v2 \
+            --bucket "${PROJECT_NAME}-${ENVIRONMENT}-backups-${{ secrets.AWS_ACCOUNT_ID }}" \
+            --prefix "database-backups/${ENVIRONMENT}/" \
+            --query "Contents[?LastModified<'$(date -d '30 days ago' --iso-8601)'].Key" \
+            --output text | while read -r key; do
+            if [ -n "$key" ] && [ "$key" != "None" ]; then
+              echo "Deleting old backup: $key"
+              aws s3 rm "s3://${PROJECT_NAME}-${ENVIRONMENT}-backups-${{ secrets.AWS_ACCOUNT_ID }}/$key"
+            fi
+          done
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          
+          if [ "$STATUS" = "success" ]; then
+            MESSAGE="✅ Database backup completed successfully for $ENVIRONMENT environment"
+            DETAILS="- Backup file: $(basename $BACKUP_FILE)
+          - Size: $BACKUP_SIZE
+          - Type: $BACKUP_TYPE
+          - Location: $S3_LOCATION
+          - Created: $(date)"
+          else
+            MESSAGE="❌ Database backup failed for $ENVIRONMENT environment"
+            DETAILS="Please check the workflow logs for details."
+          fi
+          
+          echo "$MESSAGE"
+          echo "$DETAILS"
+          
+          # Here you could add actual notification logic (Slack, email, etc.)
+          # For example:
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"'"$MESSAGE"'"}' \
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  test-backup-restore:
+    runs-on: ubuntu-latest
+    needs: backup-database
+    if: github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'staging'
+    environment: ${{ github.event.inputs.environment }}-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
+
+      - name: Test backup restore (dry run)
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          
+          echo "Testing backup restore for $ENV environment"
+          echo "This would restore the latest backup to a test database"
+          echo "Implementation would include:"
+          echo "1. Create temporary test database"
+          echo "2. Download latest backup from S3"
+          echo "3. Restore backup to test database"
+          echo "4. Verify data integrity"
+          echo "5. Cleanup test database"
+          echo "✅ Backup restore test simulation completed"

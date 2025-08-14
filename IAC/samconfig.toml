@@ -1,0 +1,115 @@
+# SAM Configuration for Seawater Climate Risk Platform
+
+version = 0.1
+
+[default]
+[default.global]
+[default.global.parameters]
+stack_name = "seawater-infrastructure"
+resolve_s3 = true
+s3_prefix = "seawater"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+disable_rollback = true
+image_repositories = []
+
+[default.build]
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate]
+[default.validate.parameters]
+lint = true
+
+[default.deploy]
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+fail_on_empty_changeset = false
+resolve_s3 = true
+
+[default.package]
+[default.package.parameters]
+resolve_s3 = true
+
+[default.sync]
+[default.sync.parameters]
+watch = true
+
+[default.local_start_api]
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+
+[default.local_start_lambda]
+[default.local_start_lambda.parameters]
+warm_containers = "EAGER"
+
+# Environment-specific configurations
+[dev]
+[dev.global]
+[dev.global.parameters]
+stack_name = "seawater-dev"
+region = "us-east-1"
+parameter_overrides = "Environment=dev"
+
+[dev.deploy]
+[dev.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+fail_on_empty_changeset = false
+parameter_overrides = [
+  "Environment=dev",
+  "ProjectName=seawater",
+  "LambdaMemorySize=512",
+  "DatabaseInstanceClass=db.t3.micro",
+  "RedisNodeType=cache.t4g.micro",
+  "EnableReadReplica=false",
+  "MaxLambdaConcurrency=10"
+]
+
+[staging]
+[staging.global]
+[staging.global.parameters]
+stack_name = "seawater-staging"
+region = "us-east-1"
+parameter_overrides = "Environment=staging"
+
+[staging.deploy]
+[staging.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+fail_on_empty_changeset = false
+parameter_overrides = [
+  "Environment=staging",
+  "ProjectName=seawater",
+  "LambdaMemorySize=512",
+  "DatabaseInstanceClass=db.t3.small",
+  "RedisNodeType=cache.t4g.small",
+  "EnableReadReplica=false",
+  "MaxLambdaConcurrency=25"
+]
+
+[production]
+[production.global]
+[production.global.parameters]
+stack_name = "seawater-production"
+region = "us-east-1"
+parameter_overrides = "Environment=production"
+
+[production.deploy]
+[production.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+fail_on_empty_changeset = false
+on_failure = "ROLLBACK"
+parameter_overrides = [
+  "Environment=production",
+  "ProjectName=seawater",
+  "LambdaMemorySize=1024",
+  "DatabaseInstanceClass=db.r6g.large",
+  "RedisNodeType=cache.r7g.large",
+  "EnableReadReplica=true",
+  "MaxLambdaConcurrency=100"
+]

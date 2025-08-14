@@ -1,0 +1,526 @@
+# Security Policies and IAM Roles for Seawater Platform
+# This template creates detailed IAM policies following least privilege principle
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Security policies and IAM roles for Seawater Climate Risk Platform'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, production]
+  
+  ProjectName:
+    Type: String
+    Default: seawater
+
+Resources:
+  # ==================== LAMBDA EXECUTION POLICIES ====================
+  
+  # Base Lambda Execution Policy
+  BaseLambdaExecutionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-${Environment}-base-lambda-policy'
+      Description: 'Base execution policy for all Seawater Lambda functions'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # CloudWatch Logs permissions
+          - Sid: CloudWatchLogsPermissions
+            Effect: Allow
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+              - 'logs:DescribeLogGroups'
+              - 'logs:DescribeLogStreams'
+            Resource: 
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${Environment}-*'
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-${Environment}-*:*'
+          
+          # X-Ray tracing permissions
+          - Sid: XRayTracingPermissions
+            Effect: Allow
+            Action:
+              - 'xray:PutTraceSegments'
+              - 'xray:PutTelemetryRecords'
+              - 'xray:GetSamplingRules'
+              - 'xray:GetSamplingTargets'
+            Resource: '*'
+          
+          # VPC permissions (for Lambda in VPC)
+          - Sid: VPCPermissions
+            Effect: Allow
+            Action:
+              - 'ec2:CreateNetworkInterface'
+              - 'ec2:DescribeNetworkInterfaces'
+              - 'ec2:DeleteNetworkInterface'
+              - 'ec2:AttachNetworkInterface'
+              - 'ec2:DetachNetworkInterface'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'ec2:Region': !Ref 'AWS::Region'
+          
+          # CloudWatch custom metrics
+          - Sid: CloudWatchMetricsPermissions
+            Effect: Allow
+            Action:
+              - 'cloudwatch:PutMetricData'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'cloudwatch:namespace': !Sub '${ProjectName}/${Environment}'
+
+  # Risk Aggregator Function Policy
+  RiskAggregatorPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-${Environment}-risk-aggregator-policy'
+      Description: 'Policy for Risk Aggregator Lambda function'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Secrets Manager access for API keys and DB credentials
+          - Sid: SecretsManagerAccess
+            Effect: Allow
+            Action:
+              - 'secretsmanager:GetSecretValue'
+              - 'secretsmanager:DescribeSecret'
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-${Environment}-database-credentials-*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-${Environment}-api-keys-*'
+          
+          # S3 access for caching and data storage
+          - Sid: S3DataAccess
+            Effect: Allow
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:DeleteObject'
+            Resource: 
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}/*'
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-assets-${AWS::AccountId}/*'
+          
+          - Sid: S3BucketAccess
+            Effect: Allow
+            Action:
+              - 's3:ListBucket'
+              - 's3:GetBucketLocation'
+            Resource: 
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}'
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-assets-${AWS::AccountId}'
+          
+          # DynamoDB access for usage tracking
+          - Sid: DynamoDBUsageTracking
+            Effect: Allow
+            Action:
+              - 'dynamodb:GetItem'
+              - 'dynamodb:PutItem'
+              - 'dynamodb:UpdateItem'
+              - 'dynamodb:Query'
+            Resource: 
+              - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-${Environment}-usage-tracker'
+              - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-${Environment}-usage-tracker/index/*'
+
+  # Geographic Processor Function Policy
+  GeographicProcessorPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-${Environment}-geographic-processor-policy'
+      Description: 'Policy for Geographic Processor Lambda function'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Secrets Manager access
+          - Sid: SecretsManagerAccess
+            Effect: Allow
+            Action:
+              - 'secretsmanager:GetSecretValue'
+              - 'secretsmanager:DescribeSecret'
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-${Environment}-database-credentials-*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-${Environment}-api-keys-*'
+          
+          # S3 access for spatial data caching
+          - Sid: S3SpatialDataAccess
+            Effect: Allow
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+            Resource: 
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}/spatial/*'
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}/geocoding/*'
+
+  # FEMA Data Sync Function Policy
+  FEMADataSyncPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-${Environment}-fema-sync-policy'
+      Description: 'Policy for FEMA Data Sync Lambda function'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Secrets Manager access
+          - Sid: SecretsManagerAccess
+            Effect: Allow
+            Action:
+              - 'secretsmanager:GetSecretValue'
+              - 'secretsmanager:DescribeSecret'
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-${Environment}-database-credentials-*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-${Environment}-api-keys-*'
+          
+          # S3 full access for data synchronization
+          - Sid: S3DataSyncAccess
+            Effect: Allow
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:DeleteObject'
+              - 's3:ListBucket'
+            Resource: 
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}'
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}/*'
+          
+          # SNS for alerting on sync failures
+          - Sid: SNSAlertAccess
+            Effect: Allow
+            Action:
+              - 'sns:Publish'
+            Resource: !Sub 'arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${ProjectName}-${Environment}-alerts'
+
+  # Premium Orchestrator Function Policy
+  PremiumOrchestratorPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-${Environment}-premium-orchestrator-policy'
+      Description: 'Policy for Premium Orchestrator Lambda function'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Secrets Manager access
+          - Sid: SecretsManagerAccess
+            Effect: Allow
+            Action:
+              - 'secretsmanager:GetSecretValue'
+              - 'secretsmanager:DescribeSecret'
+            Resource: 
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-${Environment}-database-credentials-*'
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ProjectName}-${Environment}-api-keys-*'
+          
+          # DynamoDB access for usage tracking and billing
+          - Sid: DynamoDBUsageAccess
+            Effect: Allow
+            Action:
+              - 'dynamodb:GetItem'
+              - 'dynamodb:PutItem'
+              - 'dynamodb:UpdateItem'
+              - 'dynamodb:Query'
+              - 'dynamodb:Scan'
+            Resource: 
+              - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-${Environment}-usage-tracker'
+              - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-${Environment}-usage-tracker/index/*'
+          
+          # Cost monitoring permissions
+          - Sid: CostMonitoringAccess
+            Effect: Allow
+            Action:
+              - 'ce:GetCostAndUsage'
+              - 'ce:GetUsageReport'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'ce:service': ['Amazon API Gateway', 'AWS Lambda']
+
+  # ==================== API GATEWAY POLICIES ====================
+  
+  ApiGatewayExecutionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-${Environment}-apigateway-policy'
+      Description: 'Policy for API Gateway execution'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Lambda invocation permissions
+          - Sid: LambdaInvocationPermissions
+            Effect: Allow
+            Action:
+              - 'lambda:InvokeFunction'
+            Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-*'
+          
+          # CloudWatch Logs permissions
+          - Sid: CloudWatchLogsPermissions
+            Effect: Allow
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:DescribeLogGroups'
+              - 'logs:DescribeLogStreams'
+              - 'logs:PutLogEvents'
+              - 'logs:GetLogEvents'
+              - 'logs:FilterLogEvents'
+            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/apigateway/${ProjectName}-${Environment}*'
+
+  # ==================== DATABASE SECURITY ====================
+  
+  # Database Security Group Rules (referenced in main template)
+  DatabaseSecurityGroupRules:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref DatabaseSecurityGroup  # Referenced from main template
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref LambdaSecurityGroup  # Referenced from main template
+      Description: 'PostgreSQL access from Lambda functions only'
+
+  # ==================== S3 BUCKET POLICIES ====================
+  
+  # Data Bucket Policy (restrictive access)
+  DataBucketSecurityPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Sub '${ProjectName}-${Environment}-data-${AWS::AccountId}'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Deny all public access
+          - Sid: DenyPublicAccess
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: 
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}'
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}/*'
+            Condition:
+              StringNotEquals:
+                'aws:PrincipalServiceName': 
+                  - 'lambda.amazonaws.com'
+          
+          # Allow Lambda functions to access
+          - Sid: AllowLambdaAccess
+            Effect: Allow
+            Principal:
+              AWS: 
+                - !GetAtt RiskAggregatorRole.Arn
+                - !GetAtt GeographicProcessorRole.Arn
+                - !GetAtt FEMADataSyncRole.Arn
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+              - 's3:DeleteObject'
+              - 's3:ListBucket'
+            Resource:
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}'
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}/*'
+          
+          # Require encryption in transit
+          - Sid: RequireSSL
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}'
+              - !Sub 'arn:aws:s3:::${ProjectName}-${Environment}-data-${AWS::AccountId}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+
+  # ==================== CROSS-SERVICE ROLES ====================
+  
+  # Lambda Execution Roles with specific policies
+  RiskAggregatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-risk-aggregator-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref BaseLambdaExecutionPolicy
+        - !Ref RiskAggregatorPolicy
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Function
+          Value: RiskAggregation
+
+  GeographicProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-geographic-processor-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref BaseLambdaExecutionPolicy
+        - !Ref GeographicProcessorPolicy
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Function
+          Value: GeographicProcessing
+
+  FEMADataSyncRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-fema-sync-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref BaseLambdaExecutionPolicy
+        - !Ref FEMADataSyncPolicy
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Function
+          Value: DataSynchronization
+
+  PremiumOrchestratorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-premium-orchestrator-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref BaseLambdaExecutionPolicy
+        - !Ref PremiumOrchestratorPolicy
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Function
+          Value: PremiumOrchestration
+
+  # API Gateway Execution Role
+  ApiGatewayExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-apigateway-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref ApiGatewayExecutionPolicy
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: APIGateway
+
+  # ==================== COMPLIANCE AND AUDITING ====================
+  
+  # CloudTrail for API auditing (production only)
+  SeawaterCloudTrail:
+    Type: AWS::CloudTrail::Trail
+    Condition: IsProduction
+    Properties:
+      TrailName: !Sub '${ProjectName}-${Environment}-audit-trail'
+      S3BucketName: !Sub '${ProjectName}-${Environment}-audit-logs-${AWS::AccountId}'
+      IncludeGlobalServiceEvents: true
+      IsMultiRegionTrail: true
+      EnableLogFileValidation: true
+      EventSelectors:
+        - ReadWriteType: All
+          IncludeManagementEvents: true
+          DataResources:
+            - Type: 'AWS::S3::Object'
+              Values: 
+                - !Sub '${ProjectName}-${Environment}-data-${AWS::AccountId}/*'
+            - Type: 'AWS::Lambda::Function'
+              Values: 
+                - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: SecurityAuditing
+
+  # Config Rules for compliance monitoring
+  DatabaseEncryptionRule:
+    Type: AWS::Config::ConfigRule
+    Condition: IsProduction
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-${Environment}-database-encryption-required'
+      Description: 'Ensures RDS instances have encryption enabled'
+      Source:
+        Owner: AWS
+        SourceIdentifier: RDS_STORAGE_ENCRYPTED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::RDS::DBInstance
+
+  S3EncryptionRule:
+    Type: AWS::Config::ConfigRule
+    Condition: IsProduction
+    Properties:
+      ConfigRuleName: !Sub '${ProjectName}-${Environment}-s3-encryption-required'
+      Description: 'Ensures S3 buckets have encryption enabled'
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+
+Outputs:
+  RiskAggregatorRoleArn:
+    Description: 'ARN of the Risk Aggregator execution role'
+    Value: !GetAtt RiskAggregatorRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-risk-aggregator-role-arn'
+
+  GeographicProcessorRoleArn:
+    Description: 'ARN of the Geographic Processor execution role'
+    Value: !GetAtt GeographicProcessorRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-geographic-processor-role-arn'
+
+  FEMADataSyncRoleArn:
+    Description: 'ARN of the FEMA Data Sync execution role'
+    Value: !GetAtt FEMADataSyncRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-fema-sync-role-arn'
+
+  PremiumOrchestratorRoleArn:
+    Description: 'ARN of the Premium Orchestrator execution role'
+    Value: !GetAtt PremiumOrchestratorRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-premium-orchestrator-role-arn'
+
+  ApiGatewayExecutionRoleArn:
+    Description: 'ARN of the API Gateway execution role'
+    Value: !GetAtt ApiGatewayExecutionRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-apigateway-role-arn'

@@ -1,0 +1,870 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Seawater Climate Risk Platform Infrastructure
+  Complete serverless architecture with PostgreSQL + PostGIS, Redis caching,
+  Lambda functions, API Gateway, CloudFront CDN, and monitoring.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, production]
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: seawater
+    Description: Project name for resource naming
+
+  DomainName:
+    Type: String
+    Default: ''
+    Description: Custom domain name (e.g., api.seawater.io)
+
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: SSL certificate ARN for custom domain
+
+  DatabaseUsername:
+    Type: String
+    Default: seawater_admin
+    NoEcho: true
+    Description: PostgreSQL master username
+
+  DatabasePassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 32
+    Description: PostgreSQL master password
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: VPC CIDR block
+
+  PublicSubnetACidr:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: Public subnet A CIDR
+
+  PublicSubnetBCidr:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: Public subnet B CIDR
+
+  PrivateSubnetACidr:
+    Type: String
+    Default: 10.0.11.0/24
+    Description: Private subnet A CIDR
+
+  PrivateSubnetBCidr:
+    Type: String
+    Default: 10.0.12.0/24
+    Description: Private subnet B CIDR
+
+  DatabaseSubnetACidr:
+    Type: String
+    Default: 10.0.21.0/24
+    Description: Database subnet A CIDR
+
+  DatabaseSubnetBCidr:
+    Type: String
+    Default: 10.0.22.0/24
+    Description: Database subnet B CIDR
+
+  # Environment-specific parameters
+  LambdaMemorySize:
+    Type: Number
+    Default: 512
+    Description: Lambda memory allocation (MB)
+
+  DatabaseInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues: 
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.t3.large
+      - db.r6g.large
+      - db.r6g.xlarge
+    Description: RDS instance class
+
+  RedisNodeType:
+    Type: String
+    Default: cache.t4g.micro
+    AllowedValues:
+      - cache.t4g.micro
+      - cache.t4g.small
+      - cache.t4g.medium
+      - cache.r7g.large
+    Description: ElastiCache node type
+
+  EnableReadReplica:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable RDS read replica for production
+
+  MaxLambdaConcurrency:
+    Type: Number
+    Default: 25
+    Description: Maximum Lambda concurrent executions
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
+  EnableReplica: !And [!Condition IsProduction, !Equals [!Ref EnableReadReplica, 'true']]
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    MemorySize: !Ref LambdaMemorySize
+    Timeout: 30
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        PROJECT_NAME: !Ref ProjectName
+        DATABASE_HOST: !GetAtt SeawaterDatabase.Endpoint.Address
+        DATABASE_PORT: !GetAtt SeawaterDatabase.Endpoint.Port
+        DATABASE_NAME: seawater
+        REDIS_ENDPOINT: !GetAtt SeawaterRedisCluster.PrimaryEndpoint.Address
+        REDIS_PORT: !GetAtt SeawaterRedisCluster.PrimaryEndpoint.Port
+        LOG_LEVEL: !If [IsProduction, 'warn', 'debug']
+    Tracing: Active
+    ReservedConcurrencyLimit: !Ref MaxLambdaConcurrency
+
+Resources:
+  # ==================== VPC INFRASTRUCTURE ====================
+  SeawaterVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-vpc'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnets
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      CidrBlock: !Ref PublicSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-a'
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      CidrBlock: !Ref PublicSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-b'
+
+  # Private Subnets for Lambda
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      CidrBlock: !Ref PrivateSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-a'
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      CidrBlock: !Ref PrivateSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-b'
+
+  # Database Subnets
+  DatabaseSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      CidrBlock: !Ref DatabaseSubnetACidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-a'
+
+  DatabaseSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      CidrBlock: !Ref DatabaseSubnetBCidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-b'
+
+  # NAT Gateways for private subnets
+  NatGatewayAEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-a-eip'
+
+  NatGatewayBEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-b-eip'
+
+  NatGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayAEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-a'
+
+  NatGatewayB:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayBEIP.AllocationId
+      SubnetId: !Ref PublicSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-nat-b'
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-rt'
+
+  PrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-a-rt'
+
+  PrivateRouteTableB:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-private-b-rt'
+
+  DatabaseRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SeawaterVPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-rt'
+
+  # Route Table Associations
+  PublicRouteTableAssocA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicRouteTableAssocB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTableAssocA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTableA
+
+  PrivateRouteTableAssocB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTableB
+
+  DatabaseRouteTableAssocA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DatabaseSubnetA
+      RouteTableId: !Ref DatabaseRouteTable
+
+  DatabaseRouteTableAssocB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DatabaseSubnetB
+      RouteTableId: !Ref DatabaseRouteTable
+
+  # Routes
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayA
+
+  PrivateRouteB:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableB
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayB
+
+  # ==================== SECURITY GROUPS ====================
+  # Lambda Security Group
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Seawater Lambda functions
+      VpcId: !Ref SeawaterVPC
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-lambda-sg'
+
+  # Database Security Group
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for PostgreSQL database
+      VpcId: !Ref SeawaterVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          Description: PostgreSQL access from Lambda
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-sg'
+
+  # Redis Security Group
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Redis cluster
+      VpcId: !Ref SeawaterVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          Description: Redis access from Lambda
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-redis-sg'
+
+  # ==================== DATABASE INFRASTRUCTURE ====================
+  # Database Subnet Group
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for Seawater PostgreSQL database
+      SubnetIds:
+        - !Ref DatabaseSubnetA
+        - !Ref DatabaseSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-subnet-group'
+
+  # Database Parameter Group for PostGIS
+  DatabaseParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Parameter group for PostgreSQL with PostGIS optimizations
+      Family: postgres15
+      Parameters:
+        shared_preload_libraries: 'postgis-3'
+        log_statement: !If [IsProduction, 'none', 'all']
+        log_min_duration_statement: !If [IsProduction, '1000', '100']
+        effective_cache_size: '256MB'
+        maintenance_work_mem: '64MB'
+        max_connections: '100'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-params'
+
+  # Primary Database Instance
+  SeawaterDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: !If [IsProduction, 'Snapshot', 'Delete']
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-${Environment}-db'
+      DBName: seawater
+      Engine: postgres
+      EngineVersion: '15.4'
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !If [IsProduction, '100', '20']
+      MaxAllocatedStorage: !If [IsProduction, '1000', '100']
+      StorageType: gp3
+      StorageEncrypted: true
+      
+      MasterUsername: !Ref DatabaseUsername
+      MasterUserPassword: !Ref DatabasePassword
+      
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBParameterGroupName: !Ref DatabaseParameterGroup
+      
+      BackupRetentionPeriod: !If [IsProduction, 30, 7]
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      
+      MultiAZ: !Condition IsProduction
+      MonitoringInterval: !If [IsProduction, 60, 0]
+      MonitoringRoleArn: !If 
+        - IsProduction
+        - !GetAtt DatabaseMonitoringRole.Arn
+        - !Ref 'AWS::NoValue'
+      
+      EnablePerformanceInsights: !Condition IsProduction
+      PerformanceInsightsRetentionPeriod: !If [IsProduction, 7, !Ref 'AWS::NoValue']
+      
+      DeletionProtection: !Condition IsProduction
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-postgresql'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Read Replica for Production
+  SeawaterDatabaseReadReplica:
+    Type: AWS::RDS::DBInstance
+    Condition: EnableReplica
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-${Environment}-db-replica'
+      SourceDBInstanceIdentifier: !Ref SeawaterDatabase
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      PubliclyAccessible: false
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-postgresql-replica'
+
+  # Database Monitoring Role
+  DatabaseMonitoringRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-db-monitoring-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: monitoring.rds.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole'
+
+  # ==================== REDIS CACHE ====================
+  # Redis Subnet Group
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnet group for Seawater Redis cluster
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+
+  # Redis Parameter Group
+  RedisParameterGroup:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      CacheParameterGroupFamily: redis7.x
+      Description: Parameter group for Seawater Redis cluster
+      Properties:
+        maxmemory-policy: 'allkeys-lru'
+        timeout: '300'
+
+  # Redis Cluster
+  SeawaterRedisCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      CacheClusterId: !Sub '${ProjectName}-${Environment}-redis'
+      Engine: redis
+      EngineVersion: '7.0'
+      CacheNodeType: !Ref RedisNodeType
+      NumCacheNodes: 1
+      Port: 6379
+      
+      VpcSecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      CacheParameterGroupName: !Ref RedisParameterGroup
+      
+      PreferredMaintenanceWindow: 'sun:03:00-sun:04:00'
+      NotificationTopicArn: !Ref AlertsTopic
+      
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-redis'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==================== S3 BUCKETS ====================
+  # Assets Bucket
+  AssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-assets-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: !If [IsProduction, 'Enabled', 'Suspended']
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-assets'
+
+  # Data Storage Bucket
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-data-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transition:
+              Days: 30
+              StorageClass: STANDARD_IA
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transition:
+              Days: 90
+              StorageClass: GLACIER
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-data'
+
+  # Frontend Bucket
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-frontend-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-frontend'
+
+  # Frontend Bucket Policy
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowCloudFrontAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOAI}'
+            Action: 's3:GetObject'
+            Resource: !Sub '${FrontendBucket}/*'
+
+  # ==================== CLOUDFRONT CDN ====================
+  # CloudFront Origin Access Identity
+  CloudFrontOAI:
+    Type: AWS::CloudFront::OriginAccessIdentity
+    Properties:
+      OriginAccessIdentityConfig:
+        Comment: !Sub 'OAI for ${ProjectName}-${Environment}'
+
+  # CloudFront Distribution
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub '${ProjectName} ${Environment} CDN'
+        DefaultRootObject: index.html
+        
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOAI}'
+          - Id: APIOrigin
+            DomainName: !Sub '${SeawaterApi}.execute-api.${AWS::Region}.amazonaws.com'
+            CustomOriginConfig:
+              HTTPPort: 443
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+          CachedMethods: [GET, HEAD, OPTIONS]
+          Compress: true
+          CachePolicyId: !Ref CloudFrontCachePolicy
+          
+        CacheBehaviors:
+          - PathPattern: '/api/*'
+            TargetOriginId: APIOrigin
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachedMethods: [GET, HEAD, OPTIONS]
+            CachePolicyId: !Ref APIGatewayCachePolicy
+            OriginRequestPolicyId: !Ref APIGatewayOriginRequestPolicy
+        
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 300
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 300
+        
+        Aliases: !If 
+          - HasCustomDomain
+          - [!Ref DomainName]
+          - !Ref 'AWS::NoValue'
+        
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+        
+        PriceClass: !If [IsProduction, 'PriceClass_All', 'PriceClass_100']
+        
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-cdn'
+
+  # CloudFront Cache Policies
+  CloudFrontCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub '${ProjectName}-${Environment}-frontend-cache'
+        Comment: 'Cache policy for frontend assets'
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          QueryStringsConfig:
+            QueryStringBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          CookiesConfig:
+            CookieBehavior: none
+
+  APIGatewayCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub '${ProjectName}-${Environment}-api-cache'
+        Comment: 'Cache policy for API responses'
+        DefaultTTL: 0
+        MaxTTL: 86400
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          QueryStringsConfig:
+            QueryStringBehavior: all
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Authorization
+              - Content-Type
+              - X-Api-Key
+          CookiesConfig:
+            CookieBehavior: none
+
+  APIGatewayOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub '${ProjectName}-${Environment}-api-origin'
+        Comment: 'Origin request policy for API Gateway'
+        QueryStringsConfig:
+          QueryStringBehavior: all
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers:
+            - Authorization
+            - Content-Type
+            - X-Api-Key
+            - X-Forwarded-For
+            - User-Agent
+        CookiesConfig:
+          CookieBehavior: none
+
+  # ==================== IAM ROLES AND POLICIES ====================
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-lambda-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: SeawaterLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'secretsmanager:GetSecretValue'
+                  - 'secretsmanager:DescribeSecret'
+                Resource: 
+                  - !Ref DatabaseSecret
+                  - !Ref APIKeysSecret
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource: 
+                  - !Sub '${DataBucket}/*'
+                  - !Sub '${AssetsBucket}/*'
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+
+  # API Gateway Execution Role
+  ApiGatewayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-apigateway-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: ApiGatewayPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'lambda:InvokeFunction'
+                Resource: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-*'
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:DescribeLogStreams'
+                  - 'logs:PutLogEvents'
+                  - 'logs:GetLogEvents'
+                  - 'logs:FilterLogEvents'
+                Resource: '*'
+
+# Continue with more resources...
+# (Due to length limits, I'll continue in the next part)

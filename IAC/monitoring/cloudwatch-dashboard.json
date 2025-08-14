@@ -1,0 +1,326 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/ApiGateway", "Count", "ApiName", "seawater-${Environment}-api", { "stat": "Sum" } ],
+          [ ".", "Latency", ".", ".", { "stat": "Average" } ],
+          [ ".", "4XXError", ".", ".", { "stat": "Sum" } ],
+          [ ".", "5XXError", ".", ".", { "stat": "Sum" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "API Gateway Metrics",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        },
+        "annotations": {
+          "horizontal": [
+            {
+              "label": "2s Latency Target",
+              "value": 2000
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/Lambda", "Invocations", "FunctionName", "seawater-${Environment}-risk-aggregator", { "stat": "Sum" } ],
+          [ ".", "Errors", ".", ".", { "stat": "Sum" } ],
+          [ ".", "Duration", ".", ".", { "stat": "Average" } ],
+          [ ".", "Throttles", ".", ".", { "stat": "Sum" } ],
+          [ ".", "ConcurrentExecutions", ".", ".", { "stat": "Maximum" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "Lambda Risk Aggregator Metrics",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "seawater-${Environment}-db", { "stat": "Average" } ],
+          [ ".", "DatabaseConnections", ".", ".", { "stat": "Average" } ],
+          [ ".", "FreeableMemory", ".", ".", { "stat": "Average" } ],
+          [ ".", "FreeStorageSpace", ".", ".", { "stat": "Average" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "Database Performance",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        },
+        "annotations": {
+          "horizontal": [
+            {
+              "label": "CPU Warning",
+              "value": 80
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8,
+      "y": 6,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/RDS", "ReadLatency", "DBInstanceIdentifier", "seawater-${Environment}-db", { "stat": "Average" } ],
+          [ ".", "WriteLatency", ".", ".", { "stat": "Average" } ],
+          [ ".", "ReadThroughput", ".", ".", { "stat": "Average" } ],
+          [ ".", "WriteThroughput", ".", ".", { "stat": "Average" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "Database I/O Performance",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16,
+      "y": 6,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/ElastiCache", "CPUUtilization", "CacheClusterId", "seawater-${Environment}-redis", { "stat": "Average" } ],
+          [ ".", "CacheHits", ".", ".", { "stat": "Sum" } ],
+          [ ".", "CacheMisses", ".", ".", { "stat": "Sum" } ],
+          [ ".", "NetworkBytesIn", ".", ".", { "stat": "Sum" } ],
+          [ ".", "NetworkBytesOut", ".", ".", { "stat": "Sum" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "Redis Cache Performance",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/Lambda", "Invocations", "FunctionName", "seawater-${Environment}-geographic-processor", { "stat": "Sum" } ],
+          [ "...", "seawater-${Environment}-fema-sync", ".", "." ],
+          [ "...", "seawater-${Environment}-premium-orchestrator", ".", "." ],
+          [ "AWS/Lambda", "Errors", "FunctionName", "seawater-${Environment}-geographic-processor", { "stat": "Sum" } ],
+          [ "...", "seawater-${Environment}-fema-sync", ".", "." ],
+          [ "...", "seawater-${Environment}-premium-orchestrator", ".", "." ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "All Lambda Functions Overview",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/CloudFront", "Requests", "DistributionId", "${CloudFrontDistribution}", { "stat": "Sum" } ],
+          [ ".", "BytesDownloaded", ".", ".", { "stat": "Sum" } ],
+          [ ".", "4xxErrorRate", ".", ".", { "stat": "Average" } ],
+          [ ".", "5xxErrorRate", ".", ".", { "stat": "Average" } ],
+          [ ".", "OriginLatency", ".", ".", { "stat": "Average" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "CloudFront CDN Performance",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 18,
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "Seawater/${Environment}", "SearchRequests", { "stat": "Sum" } ],
+          [ ".", "PremiumFeatureUsage", { "stat": "Sum" } ],
+          [ ".", "CacheHitRate", { "stat": "Average" } ],
+          [ ".", "ResponseTime", { "stat": "Average" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "Business Metrics",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 6,
+      "y": 18,
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "Seawater/${Environment}", "ExternalAPILatency", "Provider", "FEMA", { "stat": "Average" } ],
+          [ "...", "FirstStreet", ".", "." ],
+          [ "...", "ClimateCheck", ".", "." ],
+          [ "...", "MapBox", ".", "." ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "External API Performance",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 18,
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "seawater-${Environment}-usage-tracker", { "stat": "Sum" } ],
+          [ ".", "ConsumedWriteCapacityUnits", ".", ".", { "stat": "Sum" } ],
+          [ ".", "ThrottledRequests", ".", ".", { "stat": "Sum" } ],
+          [ ".", "UserErrors", ".", ".", { "stat": "Sum" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "DynamoDB Usage Tracker",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 18,
+      "y": 18,
+      "width": 6,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "Seawater/${Environment}", "CostPerRequest", { "stat": "Average" } ],
+          [ ".", "PremiumAPIUsage", { "stat": "Sum" } ],
+          [ ".", "FreeAPIUsage", { "stat": "Sum" } ],
+          [ ".", "ErrorRate", { "stat": "Average" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-east-1",
+        "title": "Cost and Usage Analytics",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "min": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "log",
+      "x": 0,
+      "y": 24,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "query": "SOURCE '/aws/lambda/seawater-${Environment}-risk-aggregator'\n| fields @timestamp, @message\n| filter @message like /ERROR/\n| sort @timestamp desc\n| limit 20",
+        "region": "us-east-1",
+        "title": "Recent Lambda Errors",
+        "view": "table"
+      }
+    },
+    {
+      "type": "log",
+      "x": 12,
+      "y": 24,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "query": "SOURCE '/aws/apigateway/seawater-${Environment}'\n| fields @timestamp, requestId, status, responseTime, httpMethod, resourcePath\n| filter status >= 400\n| sort @timestamp desc\n| limit 20",
+        "region": "us-east-1",
+        "title": "Recent API Errors",
+        "view": "table"
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "Parameters": {
+    "Environment": "production",
+    "ProjectName": "seawater",
+    "DomainName": "api.seawater.io",
+    "CertificateArn": "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERTIFICATE_ID",
+    "DatabaseUsername": "seawater_prod_admin",
+    "DatabasePassword": "ProductionPassword789!",
+    "VpcCidr": "10.2.0.0/16",
+    "PublicSubnetACidr": "10.2.1.0/24",
+    "PublicSubnetBCidr": "10.2.2.0/24",
+    "PrivateSubnetACidr": "10.2.11.0/24",
+    "PrivateSubnetBCidr": "10.2.12.0/24",
+    "DatabaseSubnetACidr": "10.2.21.0/24",
+    "DatabaseSubnetBCidr": "10.2.22.0/24",
+    "LambdaMemorySize": 1024,
+    "DatabaseInstanceClass": "db.r6g.large",
+    "RedisNodeType": "cache.r7g.large",
+    "EnableReadReplica": "true",
+    "MaxLambdaConcurrency": 100
+  },
+  "Tags": {
+    "Environment": "production",
+    "Project": "seawater",
+    "Owner": "platform-team",
+    "CostCenter": "product",
+    "Purpose": "production-workload",
+    "BackupRequired": "true",
+    "MonitoringLevel": "enhanced"
+  }
+}

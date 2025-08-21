@@ -1,9 +1,9 @@
 import React, { memo, useMemo } from 'react';
 import { TrendingUp, TrendingDown, Info, AlertTriangle } from 'lucide-react';
 import { clsx } from 'clsx';
-import { HazardType, RiskLevel, MultiSourceScore, ComponentSize } from '@types';
-import { getRiskLevelColor, getRiskLevelIcon } from '@utils/risk';
-import { formatDate } from '@utils/formatting';
+import { HazardType, RiskLevel, MultiSourceScore, ComponentSize } from '../../types';
+import { getRiskLevelColor, getRiskLevelIcon } from '../../utils/risk';
+import { formatDate } from '../../utils/formatting';
 
 interface RiskScoreWidgetProps extends ComponentSize {
   hazardType: HazardType;
@@ -28,6 +28,7 @@ interface RiskScoreData {
 }
 
 const HAZARD_LABELS: Record<HazardType, string> = {
+  // Original hazards
   flood: 'Flood Risk',
   wildfire: 'Wildfire Risk',
   hurricane: 'Hurricane Risk',
@@ -36,9 +37,22 @@ const HAZARD_LABELS: Record<HazardType, string> = {
   heat: 'Extreme Heat Risk',
   drought: 'Drought Risk',
   hail: 'Hail Risk',
+  // Additional FEMA hazards
+  avalanche: 'Avalanche Risk',
+  coastal_flooding: 'Coastal Flooding Risk',
+  cold_wave: 'Cold Wave Risk',
+  ice_storm: 'Ice Storm Risk',
+  landslide: 'Landslide Risk',
+  lightning: 'Lightning Risk',
+  riverine_flooding: 'Riverine Flooding Risk',
+  strong_wind: 'Strong Wind Risk',
+  tsunami: 'Tsunami Risk',
+  volcanic_activity: 'Volcanic Activity Risk',
+  winter_weather: 'Winter Weather Risk',
 };
 
 const HAZARD_ICONS: Record<HazardType, string> = {
+  // Original hazards
   flood: '🌊',
   wildfire: '🔥',
   hurricane: '🌀',
@@ -47,9 +61,22 @@ const HAZARD_ICONS: Record<HazardType, string> = {
   heat: '🌡️',
   drought: '🏜️',
   hail: '🧊',
+  // Additional FEMA hazards
+  avalanche: '⛷️',
+  coastal_flooding: '🌊🏖️',
+  cold_wave: '🥶',
+  ice_storm: '🧊❄️',
+  landslide: '⛰️',
+  lightning: '⚡',
+  riverine_flooding: '🌊🏞️',
+  strong_wind: '💨',
+  tsunami: '🌊🗾',
+  volcanic_activity: '🌋',
+  winter_weather: '❄️',
 };
 
 const HAZARD_DESCRIPTIONS: Record<HazardType, string> = {
+  // Original hazards
   flood: 'Potential for flooding from rivers, coastal storms, or heavy rainfall',
   wildfire: 'Risk of wildfire ignition and spread in the surrounding area',
   hurricane: 'Exposure to hurricane-force winds and storm surge',
@@ -58,6 +85,18 @@ const HAZARD_DESCRIPTIONS: Record<HazardType, string> = {
   heat: 'Risk of dangerous heat conditions and heat-related health impacts',
   drought: 'Potential for water scarcity and drought conditions',
   hail: 'Risk of hail damage from severe thunderstorms',
+  // Additional FEMA hazards
+  avalanche: 'Risk of snow avalanches in mountainous terrain',
+  coastal_flooding: 'Flooding specifically from coastal storms and sea level rise',
+  cold_wave: 'Extreme cold temperatures that pose health and infrastructure risks',
+  ice_storm: 'Freezing rain events that create hazardous ice accumulation',
+  landslide: 'Risk of slope failure and landslide activity',
+  lightning: 'Risk of lightning strikes and associated electrical hazards',
+  riverine_flooding: 'Flooding specifically from rivers and streams',
+  strong_wind: 'High wind events outside of tropical cyclones',
+  tsunami: 'Risk of tsunami waves from seismic or volcanic activity',
+  volcanic_activity: 'Risk from volcanic eruptions and associated hazards',
+  winter_weather: 'Combined winter hazards including snow, ice, and freezing temperatures',
 };
 
 export const RiskScoreWidget: React.FC<RiskScoreWidgetProps> = memo(({
@@ -75,7 +114,7 @@ export const RiskScoreWidget: React.FC<RiskScoreWidgetProps> = memo(({
 }) => {
   // Calculate aggregate score from multiple sources
   const aggregateData = useMemo(() => {
-    const sourceScores = Object.values(scores).filter(Boolean).map(source => source.score);
+    const sourceScores = Object.values(scores).filter(Boolean).map(source => source!.score);
     
     if (sourceScores.length === 0) {
       return {

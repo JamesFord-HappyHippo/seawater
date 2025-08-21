@@ -100,14 +100,10 @@ Resources:
           HttpMethod: '*'
           ThrottlingRateLimit: 1000
           ThrottlingBurstLimit: 2000
-          CachingEnabled: true
-          CacheTtlInSeconds: 300
           CacheKeyParameters:
             - method.request.querystring.address
             - method.request.querystring.sources
             - method.request.header.Authorization
-      CacheClusterEnabled: true
-      CacheClusterSize: '0.5'
       Auth:
         DefaultAuthorizer: JWTAuthorizer
         Authorizers:
@@ -153,10 +149,6 @@ Resources:
       Handler: index.handler
       Timeout: 30
       MemorySize: 1024
-      ReservedConcurrencyLimit: 50
-      ProvisionedConcurrencyConfig:
-        ProvisionedConcurrencyMinCapacity: 5
-        ProvisionedConcurrencyMaxCapacity: 25
       Environment:
         Variables:
           CACHE_TTL_SECONDS: '3600'
@@ -340,7 +332,6 @@ Resources:
       Handler: index.handler
       Timeout: 900  # 15 minutes for bulk operations
       MemorySize: 1024
-      ReservedConcurrencyLimit: 10
       Environment:
         Variables:
           MAX_BATCH_SIZE: '1000'

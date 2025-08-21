@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Map, Target, Filter, Search, MapPin, Layers, ZoomIn, ZoomOut } from 'lucide-react';
 import { clsx } from 'clsx';
-import { LatLng, HazardType, RiskLevel, PropertyMarker } from '@types';
-import { useMapInteraction } from '@hooks/useMapInteraction';
-import { useSpatialSearch } from '@hooks/useSpatialSearch';
+import { LatLng, HazardType, RiskLevel, PropertyMarker } from '../../types';
+import { useMapInteraction } from '../../hooks/useMapInteraction';
+import { useSpatialSearch } from '../../hooks/useSpatialSearch';
 
 interface GeographicSearchProps {
   onAreaSelect: (center: LatLng, radius: number) => void;
@@ -502,7 +502,7 @@ export const GeographicSearch: React.FC<GeographicSearchProps> = ({
                     </div>
                     
                     <div className="flex space-x-1">
-                      {property.primary_hazards.slice(0, 3).map(hazard => (
+                      {property.primary_hazards.slice(0, 3).map((hazard: HazardType) => (
                         <span key={hazard} className="text-sm">
                           {HAZARD_TYPES.find(h => h.value === hazard)?.icon}
                         </span>

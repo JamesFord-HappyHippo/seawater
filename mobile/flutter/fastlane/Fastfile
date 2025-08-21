@@ -1,0 +1,420 @@
+# This file contains the fastlane configuration for Seawater Climate Platform
+# You can find the documentation at https://docs.fastlane.tools
+
+default_platform(:ios)
+
+# Global variables
+APP_NAME = "Seawater Climate Platform"
+DEVELOPER_PORTAL_TEAM_ID = ENV["APPLE_TEAM_ID"]
+APP_STORE_CONNECT_TEAM_ID = ENV["APPLE_TEAM_ID"]
+BUNDLE_ID = "com.seawater.climate-platform"
+
+# iOS Platform Configuration
+platform :ios do
+  before_all do
+    setup_circle_ci if ENV['CI']
+  end
+
+  # Development lane for internal testing
+  lane :development do
+    # Get certificates and provisioning profiles
+    match(
+      type: "development",
+      app_identifier: BUNDLE_ID,
+      team_id: DEVELOPER_PORTAL_TEAM_ID,
+      readonly: true
+    )
+
+    # Build the app
+    build_ios_app(
+      scheme: "SeawaterClimatePlatform",
+      configuration: "Debug",
+      export_method: "development",
+      output_directory: "./builds/ios/development",
+      output_name: "SeawaterClimatePlatform-development.ipa",
+      include_bitcode: false,
+      include_symbols: true
+    )
+
+    # Upload to TestFlight for internal testing
+    upload_to_testflight(
+      skip_submission: true,
+      skip_waiting_for_build_processing: false,
+      team_id: APP_STORE_CONNECT_TEAM_ID
+    )
+
+    # Send notifications
+    slack(
+      message: "🚀 Seawater iOS Development Build uploaded to TestFlight",
+      channel: "#seawater-mobile",
+      success: true
+    )
+  end
+
+  # Beta lane for external testing
+  lane :beta do
+    # Increment build number
+    increment_build_number(
+      build_number: latest_testflight_build_number + 1,
+      xcodeproj: "./ios/SeawaterClimatePlatform.xcodeproj"
+    )
+
+    # Get certificates and provisioning profiles
+    match(
+      type: "appstore",
+      app_identifier: BUNDLE_ID,
+      team_id: DEVELOPER_PORTAL_TEAM_ID,
+      readonly: true
+    )
+
+    # Build the app
+    build_ios_app(
+      scheme: "SeawaterClimatePlatform",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "./builds/ios/beta",
+      output_name: "SeawaterClimatePlatform-beta.ipa",
+      include_bitcode: true,
+      include_symbols: true
+    )
+
+    # Upload to TestFlight for external beta testing
+    upload_to_testflight(
+      beta_app_feedback_email: "feedback@seawater.io",
+      beta_app_description: "Climate risk assessment platform for property evaluation and environmental monitoring.",
+      demo_account_required: false,
+      distribute_external: true,
+      groups: ["Climate Risk Beta Testers", "Property Assessors"],
+      notify_external_testers: true,
+      changelog: File.read("../CHANGELOG.md"),
+      team_id: APP_STORE_CONNECT_TEAM_ID
+    )
+
+    # Send notifications
+    slack(
+      message: "🌊 Seawater iOS Beta Build uploaded to TestFlight for external testing",
+      channel: "#seawater-mobile",
+      success: true
+    )
+  end
+
+  # Release lane for App Store submission
+  lane :release do
+    # Ensure we're on the main branch
+    ensure_git_branch(branch: 'main')
+    ensure_git_status_clean
+
+    # Increment version number if needed
+    increment_version_number_in_plist(
+      version_number: get_version_number(xcodeproj: "./ios/SeawaterClimatePlatform.xcodeproj"),
+      target: "SeawaterClimatePlatform"
+    )
+
+    # Increment build number
+    increment_build_number(
+      build_number: latest_testflight_build_number + 1,
+      xcodeproj: "./ios/SeawaterClimatePlatform.xcodeproj"
+    )
+
+    # Get certificates and provisioning profiles
+    match(
+      type: "appstore",
+      app_identifier: BUNDLE_ID,
+      team_id: DEVELOPER_PORTAL_TEAM_ID,
+      readonly: true
+    )
+
+    # Build the app
+    build_ios_app(
+      scheme: "SeawaterClimatePlatform",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "./builds/ios/release",
+      output_name: "SeawaterClimatePlatform-release.ipa",
+      include_bitcode: true,
+      include_symbols: true
+    )
+
+    # Upload screenshots and metadata
+    deliver(
+      app_identifier: BUNDLE_ID,
+      team_id: APP_STORE_CONNECT_TEAM_ID,
+      submit_for_review: false,
+      automatic_release: false,
+      force: true,
+      overwrite_screenshots: true,
+      metadata_path: "./fastlane/metadata",
+      screenshots_path: "./fastlane/screenshots"
+    )
+
+    # Upload to App Store Connect
+    upload_to_app_store(
+      app_identifier: BUNDLE_ID,
+      team_id: APP_STORE_CONNECT_TEAM_ID,
+      skip_metadata: false,
+      skip_screenshots: false,
+      submit_for_review: ENV["AUTO_SUBMIT_FOR_REVIEW"] == "true",
+      automatic_release: ENV["AUTO_RELEASE"] == "true",
+      force: true,
+      submission_information: {
+        add_id_info_limits_tracking: true,
+        add_id_info_serves_ads: false,
+        add_id_info_tracks_action: true,
+        add_id_info_tracks_install: true,
+        add_id_info_uses_idfa: true,
+        content_rights_has_rights: true,
+        content_rights_contains_third_party_content: false,
+        export_compliance_platform: 'ios',
+        export_compliance_compliance_required: false,
+        export_compliance_encryption_updated: false,
+        export_compliance_app_type: nil,
+        export_compliance_uses_encryption: false,
+        export_compliance_is_exempt: false,
+        export_compliance_contains_third_party_cryptography: false,
+        export_compliance_contains_proprietary_cryptography: false,
+        export_compliance_available_on_french_store: false
+      }
+    )
+
+    # Create git tag
+    add_git_tag(
+      tag: "ios/v#{get_version_number(xcodeproj: './ios/SeawaterClimatePlatform.xcodeproj')}"
+    )
+
+    # Push changes
+    push_to_git_remote
+
+    # Send notifications
+    slack(
+      message: "🏆 Seawater iOS Release submitted to App Store for review!",
+      channel: "#seawater-mobile",
+      success: true
+    )
+  end
+
+  # Screenshots lane
+  lane :screenshots do
+    capture_screenshots(
+      workspace: "./ios/SeawaterClimatePlatform.xcworkspace",
+      scheme: "SeawaterClimatePlatformUITests",
+      output_directory: "./fastlane/screenshots",
+      clear_previous_screenshots: true,
+      override_status_bar: true,
+      localize_simulator: true
+    )
+
+    frame_screenshots(
+      path: "./fastlane/screenshots",
+      rose_gold: true
+    )
+  end
+
+  # Certificates and provisioning profiles
+  lane :certificates do
+    match(
+      type: "development",
+      app_identifier: BUNDLE_ID,
+      team_id: DEVELOPER_PORTAL_TEAM_ID
+    )
+
+    match(
+      type: "appstore",
+      app_identifier: BUNDLE_ID,
+      team_id: DEVELOPER_PORTAL_TEAM_ID
+    )
+  end
+
+  # Error handling
+  error do |lane, exception|
+    slack(
+      message: "❌ Seawater iOS #{lane} failed: #{exception.message}",
+      channel: "#seawater-mobile",
+      success: false
+    )
+  end
+end
+
+# Android Platform Configuration  
+platform :android do
+  # Development lane for internal testing
+  lane :development do
+    # Build debug APK
+    gradle(
+      project_dir: "./android",
+      task: "assembleDebug",
+      properties: {
+        "android.injected.version.code" => ENV["ANDROID_VERSION_CODE"] || "1",
+        "android.injected.version.name" => ENV["ANDROID_VERSION_NAME"] || "1.0.0"
+      }
+    )
+
+    # Upload to Firebase App Distribution for internal testing
+    firebase_app_distribution(
+      app: ENV["FIREBASE_APP_ID_ANDROID"],
+      firebase_cli_token: ENV["FIREBASE_CLI_TOKEN"],
+      android_artifact_type: "APK",
+      android_artifact_path: "./android/app/build/outputs/apk/debug/app-debug.apk",
+      groups: "seawater-dev-team",
+      release_notes: "Development build for internal testing"
+    )
+
+    # Send notifications
+    slack(
+      message: "🤖 Seawater Android Development Build uploaded to Firebase App Distribution",
+      channel: "#seawater-mobile",
+      success: true
+    )
+  end
+
+  # Beta lane for external testing
+  lane :beta do
+    # Increment version code
+    increment_version_code(
+      gradle_file_path: "./android/app/build.gradle",
+      version_code: ENV["ANDROID_VERSION_CODE"] || (google_play_track_version_codes(track: "internal").max + 1)
+    )
+
+    # Build release APK for beta testing
+    gradle(
+      project_dir: "./android",
+      task: "assembleRelease",
+      properties: {
+        "android.injected.signing.store.file" => ENV["ANDROID_KEYSTORE_PATH"],
+        "android.injected.signing.store.password" => ENV["ANDROID_KEYSTORE_PASSWORD"],
+        "android.injected.signing.key.alias" => ENV["ANDROID_KEY_ALIAS"],
+        "android.injected.signing.key.password" => ENV["ANDROID_KEY_PASSWORD"]
+      }
+    )
+
+    # Upload to Google Play Console for internal testing
+    upload_to_play_store(
+      track: "internal",
+      apk: "./android/app/build/outputs/apk/release/app-release.apk",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+
+    # Send notifications
+    slack(
+      message: "🌊 Seawater Android Beta Build uploaded to Google Play Console for internal testing",
+      channel: "#seawater-mobile",
+      success: true
+    )
+  end
+
+  # Release lane for Google Play Store
+  lane :release do
+    # Ensure we're on the main branch
+    ensure_git_branch(branch: 'main')
+    ensure_git_status_clean
+
+    # Increment version code
+    increment_version_code(
+      gradle_file_path: "./android/app/build.gradle",
+      version_code: google_play_track_version_codes(track: "production").max + 1
+    )
+
+    # Build Android App Bundle for production
+    gradle(
+      project_dir: "./android",
+      task: "bundleRelease",
+      properties: {
+        "android.injected.signing.store.file" => ENV["ANDROID_KEYSTORE_PATH"],
+        "android.injected.signing.store.password" => ENV["ANDROID_KEYSTORE_PASSWORD"],
+        "android.injected.signing.key.alias" => ENV["ANDROID_KEY_ALIAS"],
+        "android.injected.signing.key.password" => ENV["ANDROID_KEY_PASSWORD"]
+      }
+    )
+
+    # Upload to Google Play Store
+    upload_to_play_store(
+      track: "production",
+      aab: "./android/app/build/outputs/bundle/release/app-release.aab",
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false,
+      metadata_path: "./fastlane/metadata/android",
+      release_status: ENV["AUTO_RELEASE"] == "true" ? "completed" : "draft"
+    )
+
+    # Create git tag
+    version_name = get_version_name(
+      gradle_file_path: "./android/app/build.gradle",
+      ext_constant_name: "versionName"
+    )
+    add_git_tag(tag: "android/v#{version_name}")
+
+    # Push changes
+    push_to_git_remote
+
+    # Send notifications
+    slack(
+      message: "🏆 Seawater Android Release uploaded to Google Play Store!",
+      channel: "#seawater-mobile",
+      success: true
+    )
+  end
+
+  # Screenshots lane for Android
+  lane :screenshots do
+    screengrab(
+      locales: ['en-US', 'es-ES'],
+      clear_previous_screenshots: true,
+      output_directory: "./fastlane/metadata/android",
+      app_package_name: "com.seawater.climate_platform",
+      use_tests_in_packages: ['com.seawater.climate_platform.screenshots']
+    )
+  end
+
+  # Error handling
+  error do |lane, exception|
+    slack(
+      message: "❌ Seawater Android #{lane} failed: #{exception.message}",
+      channel: "#seawater-mobile",
+      success: false
+    )
+  end
+end
+
+# Cross-platform lanes
+desc "Run tests for both platforms"
+lane :test do
+  # Run Flutter/Expo tests
+  sh("cd .. && npm run test")
+  
+  # Run iOS tests
+  run_tests(
+    workspace: "./ios/SeawaterClimatePlatform.xcworkspace",
+    devices: ["iPhone 14", "iPad Pro (12.9-inch) (6th generation)"],
+    scheme: "SeawaterClimatePlatformTests"
+  )
+
+  # Run Android tests  
+  gradle(
+    project_dir: "./android",
+    task: "testReleaseUnitTest"
+  )
+end
+
+desc "Deploy to beta for both platforms"
+lane :deploy_beta do
+  ios do
+    beta
+  end
+  
+  android do
+    beta
+  end
+end
+
+desc "Deploy to production for both platforms"
+lane :deploy_production do
+  ios do
+    release
+  end
+  
+  android do
+    release
+  end
+end

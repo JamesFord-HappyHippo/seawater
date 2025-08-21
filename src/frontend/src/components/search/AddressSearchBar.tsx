@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Search, MapPin, Clock, X } from 'lucide-react';
 import { clsx } from 'clsx';
-import { LatLng, GeocodedAddress } from '@types';
-import { useDebounce } from '@hooks/useDebounce';
-import { useGeocoding } from '@hooks/useGeocoding';
-import { useLocalStorage } from '@hooks/useLocalStorage';
+import { LatLng, GeocodedAddress } from '../../types';
+import { useDebounce } from '../../hooks/useDebounce';
+import { useGeocoding } from '../../hooks/useGeocoding';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 interface AddressSearchBarProps {
   placeholder?: string;
@@ -135,10 +135,7 @@ export const AddressSearchBar: React.FC<AddressSearchBarProps> = ({
   
   // Handle address selection
   const handleSelectAddress = useCallback((address: GeocodedAddress | RecentSearch) => {
-    const coordinates = 'coordinates' in address ? address.coordinates : {
-      latitude: address.coordinates.latitude,
-      longitude: address.coordinates.longitude,
-    };
+    const coordinates = address.coordinates;
     
     const formattedAddress = 'formatted_address' in address ? address.formatted_address : address.address;
     

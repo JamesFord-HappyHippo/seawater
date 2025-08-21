@@ -1,0 +1,302 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Seawater Climate Risk Platform - Cognito User Pool for Registration-Based Trial'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues: [dev, staging, prod]
+    Description: 'Environment name'
+  
+  CognitoUserPoolName:
+    Type: String
+    Default: 'Seawater-Climate-Risk-UserPool'
+    Description: 'Cognito User Pool name'
+  
+  AllowedCorsOrigins:
+    Type: CommaDelimitedList
+    Default: 'http://localhost:3000,https://dev.seawater.io,https://staging.seawater.io,https://seawater.io'
+    Description: 'Allowed CORS origins for Cognito'
+    
+  PostConfirmationLambdaArn:
+    Type: String
+    Default: ''
+    Description: 'Post-Confirmation Lambda ARN for trial initialization'
+
+Conditions:
+  HasPostConfirmationLambda: !Not [!Equals [!Ref PostConfirmationLambdaArn, '']]
+
+Resources:
+  # Cognito User Pool - Registration-focused configuration
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${Environment}-${CognitoUserPoolName}'
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: false   # Simplified for trial users
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false     # Simplified for trial users
+          TemporaryPasswordValidityDays: 7
+        SignInPolicy:
+          AllowedFirstAuthFactors:
+            - PASSWORD
+      MfaConfiguration: 'OFF'  # Disabled for trial simplicity
+      DeletionProtection: INACTIVE
+      LambdaConfig: !If
+        - HasPostConfirmationLambda
+        - PostConfirmation: !Ref PostConfirmationLambdaArn
+        - !Ref AWS::NoValue
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      # Trial-focused schema with marketing consent
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: given_name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: family_name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: custom:trial_status
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: custom:marketing_consent
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: custom:intended_use
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: custom:referral_source
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      SmsVerificationMessage: "Your Seawater verification code is {####}. "
+      EmailVerificationMessage: |
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+            <title>Welcome to Seawater - Verify Your Account</title>
+          </head>
+          <body style="font-family: Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+              <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #1e40af; margin: 0; font-size: 28px;">🌊 Welcome to Seawater</h1>
+                <p style="color: #64748b; margin-top: 8px; font-size: 16px;">Climate Risk Intelligence Platform</p>
+              </div>
+              
+              <h2 style="color: #334155; margin-bottom: 16px;">Hi there!</h2>
+              <p style="color: #475569; line-height: 1.6; margin-bottom: 20px;">
+                Thank you for joining Seawater! You're one step away from accessing comprehensive climate risk assessments for any property.
+              </p>
+              
+              <p style="color: #475569; line-height: 1.6; margin-bottom: 24px;">
+                <strong>Use the verification code below to activate your free trial:</strong>
+              </p>
+              
+              <div style="background-color: #eff6ff; border: 2px solid #3b82f6; padding: 24px; border-radius: 8px; text-align: center; margin: 24px 0;">
+                <h2 style="color: #1e40af; margin: 0; font-size: 32px; font-weight: bold; letter-spacing: 2px;">{####}</h2>
+              </div>
+              
+              <div style="background-color: #f0fdf4; border-left: 4px solid #22c55e; padding: 16px; margin: 24px 0;">
+                <p style="color: #166534; margin: 0; font-weight: 600;">✅ What you get with your free trial:</p>
+                <ul style="color: #166534; margin-top: 8px; padding-left: 20px;">
+                  <li>1 comprehensive climate risk report</li>
+                  <li>Access to FEMA flood zones and disaster history</li>
+                  <li>Risk scores for flood, wildfire, heat, and severe weather</li>
+                  <li>Property-specific vulnerability assessment</li>
+                </ul>
+              </div>
+              
+              <p style="color: #475569; line-height: 1.6; margin-bottom: 24px;">
+                Once verified, you can immediately run your first free risk assessment on any US property.
+              </p>
+              
+              <p style="color: #475569; line-height: 1.6;">
+                Best regards,<br>
+                <strong>The Seawater Team</strong>
+              </p>
+              
+              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
+              <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2025 Seawater Climate Risk Platform. All rights reserved.<br>
+                Need help? Contact us at support@seawater.io
+              </p>
+            </div>
+          </body>
+        </html>
+      EmailVerificationSubject: "🌊 Welcome to Seawater - Your verification code"
+      VerificationMessageTemplate:
+        SmsMessage: "Your Seawater verification code is {####}. "
+        EmailMessage: "Your Seawater verification code is {####}"
+        EmailSubject: "🌊 Welcome to Seawater - Your verification code"
+        DefaultEmailOption: CONFIRM_WITH_CODE
+      UserPoolTags:
+        Environment: !Ref Environment
+        Service: 'Seawater-Climate-Risk'
+        Purpose: 'Registration-Based-Trial'
+
+  # Cognito User Pool Client for web application
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      ClientName: !Sub '${Environment}-seawater-web-client'
+      GenerateSecret: false
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs: !Ref AllowedCorsOrigins
+      LogoutURLs: !Ref AllowedCorsOrigins
+      AllowedOAuthFlows:
+        - code
+        - implicit
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - phone
+        - email
+        - openid
+        - profile
+        - aws.cognito.signin.user.admin
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 8    # Hours - reasonable for trial users
+      IdTokenValidity: 8        # Hours
+      RefreshTokenValidity: 30  # Days - keep users logged in for trial period
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      WriteAttributes:
+        - email
+        - given_name
+        - family_name
+        - custom:trial_status
+        - custom:marketing_consent
+        - custom:intended_use
+        - custom:referral_source
+      ReadAttributes:
+        - email
+        - given_name
+        - family_name
+        - custom:trial_status
+        - custom:marketing_consent
+        - custom:intended_use
+        - custom:referral_source
+
+  # Cognito User Pool Domain for hosted UI (optional)
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      Domain: !Sub '${Environment}-seawater-auth-${AWS::AccountId}'
+
+Outputs:
+  CognitoUserPoolId:
+    Description: 'Cognito User Pool ID'
+    Value: !Ref CognitoUserPool
+    Export:
+      Name: !Sub '${Environment}-Seawater-UserPool-ID'
+
+  CognitoClientId:
+    Description: 'Cognito User Pool Client ID'
+    Value: !Ref CognitoUserPoolClient
+    Export:
+      Name: !Sub '${Environment}-Seawater-UserPoolClient-ID'
+
+  CognitoUserPoolArn:
+    Description: 'Cognito User Pool ARN'
+    Value: !GetAtt CognitoUserPool.Arn
+    Export:
+      Name: !Sub '${Environment}-Seawater-UserPool-ARN'
+
+  CognitoUserPoolDomain:
+    Description: 'Cognito User Pool Domain URL'
+    Value: !Sub 'https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+    Export:
+      Name: !Sub '${Environment}-Seawater-UserPoolDomain'
+
+  TrialSystemSummary:
+    Description: 'Registration-Based Trial System Configuration'
+    Value: !Sub |
+      🌊 SEAWATER REGISTRATION-BASED TRIAL SYSTEM 🌊
+      
+      ✅ TRIAL SYSTEM FEATURES:
+      - Email-based registration with simple password requirements
+      - Custom attributes for trial tracking and marketing consent
+      - Post-confirmation Lambda hook for trial initialization
+      - JWT tokens with 8-hour validity for secure API access
+      - Refresh tokens with 30-day validity for user retention
+      
+      🎯 TRIAL FLOW:
+      1. User registers with email + basic info
+      2. Email verification required before trial access
+      3. Post-confirmation Lambda initializes trial status
+      4. 1 free comprehensive risk report per registered user
+      5. Server-side trial tracking prevents circumvention
+      6. Conversion prompts after trial usage
+      
+      📊 MARKETING CONSENT:
+      - GDPR-compliant opt-in collection
+      - Custom attributes: marketing_consent, intended_use, referral_source
+      - Preference management in user profile
+      
+      🔧 CONFIGURATION:
+      User Pool: ${CognitoUserPool}
+      Client: ${CognitoUserPoolClient}
+      Domain: https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com
+      
+      🚀 READY FOR:
+      - Immediate trial access after email verification
+      - Server-side usage tracking and enforcement
+      - Seamless upgrade flow to paid subscriptions
+      - Marketing lead nurturing campaigns
+
+  DeploymentInstructions:
+    Description: 'Deployment Instructions'
+    Value: |
+      📋 DEPLOYMENT INSTRUCTIONS 📋
+      
+      1. Deploy this Cognito stack first:
+         aws cloudformation deploy --template-file cognito-seawater.yaml \
+           --stack-name seawater-cognito-${Environment} \
+           --parameter-overrides Environment=${Environment}
+      
+      2. Update main SAM template with exported values:
+         - Reference: !ImportValue ${Environment}-Seawater-UserPool-ARN
+         - Update JWT authorizer configuration
+      
+      3. Deploy post-confirmation Lambda for trial initialization
+      
+      4. Update frontend with new Cognito configuration:
+         - UserPoolId: Use exported value
+         - ClientId: Use exported value
+         - Update registration flow with marketing consent
+      
+      5. Test trial flow:
+         - Register new user
+         - Verify email
+         - Confirm trial initialization
+         - Test 1 free report limit
+         - Verify upgrade prompts

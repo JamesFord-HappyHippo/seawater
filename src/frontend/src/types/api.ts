@@ -5,15 +5,55 @@ import {
   RiskAssessment, 
   PropertyRiskData, 
   Professional, 
-  User, 
-  APIResponse, 
-  APIError,
+  User,
   PropertyComparison,
   HistoricalEvent,
   ClimateProjection,
   GeocodedAddress,
   HazardType
 } from './index';
+
+// API Response Types (moved here to avoid circular imports)
+export type APIResponse<T> = 
+  | {
+      success: true;
+      data: T;
+      meta?: {
+        request_id: string;
+        timestamp: string;
+        processing_time_ms: number;
+        cache_status: 'hit' | 'miss' | 'stale';
+        cost_credits?: number;
+        data_sources_used?: string[];
+      };
+    }
+  | {
+      success: false;
+      error: {
+        code: string;
+        message: string;
+        details?: Record<string, any> | string;
+        suggestion?: string;
+      };
+      meta?: {
+        request_id: string;
+        timestamp: string;
+      };
+    };
+
+export interface APIError {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+    details?: Record<string, any>;
+    suggestion?: string;
+  };
+  meta?: {
+    request_id: string;
+    timestamp: string;
+  };
+}
 
 // API Client Configuration
 export interface APIClientConfig {

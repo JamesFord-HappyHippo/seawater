@@ -1,0 +1,744 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Seawater Climate Risk Platform - Mobile Monitoring and Observability Stack
+  Comprehensive monitoring, alerting, and observability for mobile-first climate platform
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, staging, production]
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: seawater
+    Description: Project name for resource naming
+
+  AlertEmail:
+    Type: String
+    Description: Email address for critical alerts
+    Default: alerts@seawater.io
+
+  SlackWebhookUrl:
+    Type: String
+    NoEcho: true
+    Description: Slack webhook URL for notifications
+    Default: ''
+
+  SentryDSN:
+    Type: String
+    NoEcho: true
+    Description: Sentry DSN for error tracking
+    Default: ''
+
+  # Monitoring thresholds
+  APIErrorThreshold:
+    Type: Number
+    Default: 5
+    Description: API error rate threshold percentage
+
+  DatabaseConnectionThreshold:
+    Type: Number
+    Default: 80
+    Description: Database connection percentage threshold
+
+  MobileCrashRateThreshold:
+    Type: Number
+    Default: 1
+    Description: Mobile app crash rate percentage threshold
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  HasSlack: !Not [!Equals [!Ref SlackWebhookUrl, '']]
+  HasSentry: !Not [!Equals [!Ref SentryDSN, '']]
+
+Resources:
+  # ==================== SNS TOPICS FOR ALERTS ====================
+  CriticalAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-critical-alerts'
+      DisplayName: 'Seawater Critical Alerts'
+
+  WarningAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-warning-alerts'
+      DisplayName: 'Seawater Warning Alerts'
+
+  InfoAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-info-alerts'
+      DisplayName: 'Seawater Info Alerts'
+
+  # Email Subscriptions
+  CriticalEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref CriticalAlertsTopic
+      Endpoint: !Ref AlertEmail
+
+  WarningEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: IsProduction
+    Properties:
+      Protocol: email
+      TopicArn: !Ref WarningAlertsTopic
+      Endpoint: !Ref AlertEmail
+
+  # ==================== CLOUDWATCH DASHBOARD ====================
+  SeawaterMobileDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectName}-${Environment}-mobile-platform'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ApiGateway", "Count", "ApiName", "${ProjectName}-${Environment}-mobile-api"],
+                  [".", "Latency", ".", "."],
+                  [".", "4XXError", ".", "."],
+                  [".", "5XXError", ".", "."]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "API Gateway Metrics",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "${ProjectName}-${Environment}-property-risk"],
+                  [".", "Errors", ".", "."],
+                  [".", "Invocations", ".", "."],
+                  [".", "Throttles", ".", "."]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Lambda Function Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${ProjectName}-${Environment}-mobile-db"],
+                  [".", "DatabaseConnections", ".", "."],
+                  [".", "ReadLatency", ".", "."],
+                  [".", "WriteLatency", ".", "."]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Database Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ElastiCache", "CPUUtilization", "CacheClusterId", "${ProjectName}-${Environment}-mobile-redis"],
+                  [".", "CacheHits", ".", "."],
+                  [".", "CacheMisses", ".", "."],
+                  [".", "NetworkBytesIn", ".", "."],
+                  [".", "NetworkBytesOut", ".", "."]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Redis Cache Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 12,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/lambda/${ProjectName}-${Environment}-property-risk'\n| fields @timestamp, @message\n| filter @message like /ERROR/\n| sort @timestamp desc\n| limit 20",
+                "region": "${AWS::Region}",
+                "title": "Recent Errors",
+                "view": "table"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 18,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Seawater/Mobile", "UserSessions", "Environment", "${Environment}"],
+                  [".", "PropertyAssessments", ".", "."],
+                  [".", "APIRequests", ".", "."],
+                  [".", "ErrorRate", ".", "."]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Business Metrics",
+                "period": 300
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 18,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Seawater/Mobile", "AppLaunchTime", "Platform", "iOS"],
+                  [".", ".", ".", "Android"],
+                  [".", "CrashRate", ".", "iOS"],
+                  [".", ".", ".", "Android"]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Mobile App Performance",
+                "period": 300
+              }
+            }
+          ]
+        }
+
+  # ==================== API GATEWAY ALARMS ====================
+  APIGateway4xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-api-4xx-high'
+      AlarmDescription: 'High 4xx error rate on mobile API'
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref APIErrorThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${ProjectName}-${Environment}-mobile-api'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+      TreatMissingData: notBreaching
+
+  APIGateway5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-api-5xx-critical'
+      AlarmDescription: 'Critical 5xx error rate on mobile API'
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${ProjectName}-${Environment}-mobile-api'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+      TreatMissingData: notBreaching
+
+  APILatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-api-latency-high'
+      AlarmDescription: 'High API response latency'
+      MetricName: Latency
+      Namespace: AWS/ApiGateway
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !If [IsProduction, 2000, 5000]  # 2s prod, 5s dev
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${ProjectName}-${Environment}-mobile-api'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+
+  # ==================== LAMBDA ALARMS ====================
+  LambdaErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-lambda-error-rate'
+      AlarmDescription: 'High Lambda function error rate'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub '${ProjectName}-${Environment}-property-risk'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+
+  LambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-lambda-duration-high'
+      AlarmDescription: 'High Lambda function duration'
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !If [IsProduction, 5000, 10000]  # 5s prod, 10s dev
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub '${ProjectName}-${Environment}-property-risk'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+
+  LambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-lambda-throttles'
+      AlarmDescription: 'Lambda function throttling detected'
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Sub '${ProjectName}-${Environment}-property-risk'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+
+  # ==================== DATABASE ALARMS ====================
+  DatabaseCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-cpu-high'
+      AlarmDescription: 'High database CPU utilization'
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !If [IsProduction, 70, 80]
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Sub '${ProjectName}-${Environment}-mobile-db'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+
+  DatabaseConnectionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-connections-high'
+      AlarmDescription: 'High database connection count'
+      MetricName: DatabaseConnections
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref DatabaseConnectionThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Sub '${ProjectName}-${Environment}-mobile-db'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+
+  DatabaseReadLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-read-latency'
+      AlarmDescription: 'High database read latency'
+      MetricName: ReadLatency
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 0.2  # 200ms
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Sub '${ProjectName}-${Environment}-mobile-db'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+
+  # ==================== REDIS ALARMS ====================
+  RedisCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-redis-cpu-high'
+      AlarmDescription: 'High Redis CPU utilization'
+      MetricName: CPUUtilization
+      Namespace: AWS/ElastiCache
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Sub '${ProjectName}-${Environment}-mobile-redis'
+      AlarmActions:
+        - !Ref WarningAlertsTopic
+
+  RedisMemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-redis-memory-high'
+      AlarmDescription: 'High Redis memory utilization'
+      MetricName: DatabaseMemoryUsagePercentage
+      Namespace: AWS/ElastiCache
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Sub '${ProjectName}-${Environment}-mobile-redis'
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+
+  # ==================== CUSTOM METRICS AND ALARMS ====================
+  MobileCrashRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-mobile-crash-rate'
+      AlarmDescription: 'High mobile app crash rate'
+      MetricName: CrashRate
+      Namespace: Seawater/Mobile
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref MobileCrashRateThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref CriticalAlertsTopic
+
+  BusinessMetricAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-low-user-activity'
+      AlarmDescription: 'Low user activity detected'
+      MetricName: UserSessions
+      Namespace: Seawater/Mobile
+      Statistic: Sum
+      Period: 3600  # 1 hour
+      EvaluationPeriods: 2
+      Threshold: !If [IsProduction, 10, 1]  # Production: 10 sessions/hour, Dev: 1 session/hour
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: Environment
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref InfoAlertsTopic
+      TreatMissingData: breaching
+
+  # ==================== LAMBDA FOR CUSTOM MONITORING ====================
+  CustomMetricsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-custom-metrics-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CustomMetricsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:Scan'
+                  - 'dynamodb:Query'
+                Resource: 
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-${Environment}-*'
+              - Effect: Allow
+                Action:
+                  - 'sns:Publish'
+                Resource:
+                  - !Ref CriticalAlertsTopic
+                  - !Ref WarningAlertsTopic
+
+  CustomMetricsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-custom-metrics'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt CustomMetricsRole.Arn
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk');
+          const cloudwatch = new AWS.CloudWatch();
+          const dynamodb = new AWS.DynamoDB.DocumentClient();
+          
+          exports.handler = async (event) => {
+            const environment = process.env.ENVIRONMENT;
+            const projectName = process.env.PROJECT_NAME;
+            
+            try {
+              // Calculate business metrics
+              const userSessions = await getUserSessionCount();
+              const propertyAssessments = await getPropertyAssessmentCount();
+              const errorRate = await calculateErrorRate();
+              
+              // Put custom metrics
+              const params = {
+                Namespace: 'Seawater/Mobile',
+                MetricData: [
+                  {
+                    MetricName: 'UserSessions',
+                    Dimensions: [{ Name: 'Environment', Value: environment }],
+                    Value: userSessions,
+                    Unit: 'Count',
+                    Timestamp: new Date()
+                  },
+                  {
+                    MetricName: 'PropertyAssessments',
+                    Dimensions: [{ Name: 'Environment', Value: environment }],
+                    Value: propertyAssessments,
+                    Unit: 'Count',
+                    Timestamp: new Date()
+                  },
+                  {
+                    MetricName: 'ErrorRate',
+                    Dimensions: [{ Name: 'Environment', Value: environment }],
+                    Value: errorRate,
+                    Unit: 'Percent',
+                    Timestamp: new Date()
+                  }
+                ]
+              };
+              
+              await cloudwatch.putMetricData(params).promise();
+              console.log('Custom metrics published successfully');
+              
+              return { statusCode: 200, body: 'Success' };
+            } catch (error) {
+              console.error('Error publishing custom metrics:', error);
+              throw error;
+            }
+          };
+          
+          async function getUserSessionCount() {
+            // Implementation to count active user sessions from DynamoDB
+            // This is a placeholder - implement based on your session tracking
+            return Math.floor(Math.random() * 100);
+          }
+          
+          async function getPropertyAssessmentCount() {
+            // Implementation to count property assessments from the last hour
+            // This is a placeholder - implement based on your data structure
+            return Math.floor(Math.random() * 50);
+          }
+          
+          async function calculateErrorRate() {
+            // Implementation to calculate error rate from CloudWatch logs
+            // This is a placeholder - implement based on your error tracking
+            return Math.random() * 5;
+          }
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          PROJECT_NAME: !Ref ProjectName
+      Timeout: 60
+
+  # Schedule custom metrics collection every 5 minutes
+  CustomMetricsSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-custom-metrics-schedule'
+      Description: 'Trigger custom metrics collection every 5 minutes'
+      ScheduleExpression: 'rate(5 minutes)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CustomMetricsFunction.Arn
+          Id: CustomMetricsTarget
+
+  CustomMetricsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CustomMetricsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CustomMetricsSchedule.Arn
+
+  # ==================== LOG GROUPS ====================
+  APIGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${ProjectName}-${Environment}-mobile-api'
+      RetentionInDays: !If [IsProduction, 30, 14]
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProjectName}-${Environment}-property-risk'
+      RetentionInDays: !If [IsProduction, 30, 14]
+
+  # ==================== SLACK NOTIFICATION LAMBDA ====================
+  SlackNotificationRole:
+    Type: AWS::IAM::Role
+    Condition: HasSlack
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-slack-notification-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  SlackNotificationFunction:
+    Type: AWS::Lambda::Function
+    Condition: HasSlack
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-slack-notifications'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt SlackNotificationRole.Arn
+      Code:
+        ZipFile: |
+          const https = require('https');
+          const url = require('url');
+          
+          exports.handler = async (event) => {
+            const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+            const message = JSON.parse(event.Records[0].Sns.Message);
+            
+            const slackMessage = {
+              text: `🚨 Seawater Alert: ${message.AlarmName}`,
+              attachments: [{
+                color: message.NewStateValue === 'ALARM' ? 'danger' : 'good',
+                fields: [
+                  { title: 'Alarm', value: message.AlarmName, short: true },
+                  { title: 'Status', value: message.NewStateValue, short: true },
+                  { title: 'Reason', value: message.NewStateReason, short: false },
+                  { title: 'Environment', value: process.env.ENVIRONMENT, short: true }
+                ]
+              }]
+            };
+            
+            return new Promise((resolve, reject) => {
+              const options = url.parse(webhookUrl);
+              options.method = 'POST';
+              options.headers = { 'Content-Type': 'application/json' };
+              
+              const req = https.request(options, (res) => {
+                resolve({ statusCode: 200 });
+              });
+              
+              req.on('error', (e) => {
+                reject(e);
+              });
+              
+              req.write(JSON.stringify(slackMessage));
+              req.end();
+            });
+          };
+      Environment:
+        Variables:
+          SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
+          ENVIRONMENT: !Ref Environment
+      Timeout: 30
+
+  SlackNotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasSlack
+    Properties:
+      Protocol: lambda
+      TopicArn: !Ref CriticalAlertsTopic
+      Endpoint: !GetAtt SlackNotificationFunction.Arn
+
+  SlackNotificationPermission:
+    Type: AWS::Lambda::Permission
+    Condition: HasSlack
+    Properties:
+      FunctionName: !Ref SlackNotificationFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref CriticalAlertsTopic
+
+# ==================== OUTPUTS ====================
+Outputs:
+  DashboardURL:
+    Description: CloudWatch Dashboard URL
+    Value: !Sub 'https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}-${Environment}-mobile-platform'
+
+  CriticalAlertsTopicArn:
+    Description: Critical alerts SNS topic ARN
+    Value: !Ref CriticalAlertsTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-critical-alerts-topic'
+
+  WarningAlertsTopicArn:
+    Description: Warning alerts SNS topic ARN
+    Value: !Ref WarningAlertsTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-warning-alerts-topic'
+
+  InfoAlertsTopicArn:
+    Description: Info alerts SNS topic ARN
+    Value: !Ref InfoAlertsTopic
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-info-alerts-topic'

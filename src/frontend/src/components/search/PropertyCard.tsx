@@ -1,9 +1,9 @@
 import React, { memo } from 'react';
 import { MapPin, Eye, GitCompare, Share2, AlertTriangle, TrendingUp, Calendar } from 'lucide-react';
 import { clsx } from 'clsx';
-import { Property, RiskAssessment, RiskLevel, HazardType } from '@types';
-import { formatDate, formatNumber } from '@utils/formatting';
-import { getRiskLevelColor, getRiskLevelIcon } from '@utils/risk';
+import { Property, RiskAssessment, RiskLevel, HazardType } from '../../types';
+import { formatDate, formatNumber } from '../../utils/formatting';
+import { getRiskLevelColor, getRiskLevelIcon } from '../../utils/risk';
 
 interface PropertyCardProps {
   address: string;
@@ -28,6 +28,18 @@ const HAZARD_LABELS: Record<HazardType, string> = {
   heat: 'Extreme Heat',
   drought: 'Drought',
   hail: 'Hail',
+  // Additional FEMA hazards
+  avalanche: 'Avalanche',
+  coastal_flooding: 'Coastal Flooding',
+  cold_wave: 'Cold Wave',
+  ice_storm: 'Ice Storm',
+  landslide: 'Landslide',
+  lightning: 'Lightning',
+  riverine_flooding: 'Riverine Flooding',
+  strong_wind: 'Strong Wind',
+  tsunami: 'Tsunami',
+  volcanic_activity: 'Volcanic Activity',
+  winter_weather: 'Winter Weather',
 };
 
 const HAZARD_ICONS: Record<HazardType, string> = {
@@ -39,6 +51,18 @@ const HAZARD_ICONS: Record<HazardType, string> = {
   heat: '🌡️',
   drought: '🏜️',
   hail: '🧊',
+  // Additional FEMA hazards
+  avalanche: '⛷️',
+  coastal_flooding: '🌊',
+  cold_wave: '🥶',
+  ice_storm: '🧊',
+  landslide: '⛰️',
+  lightning: '⚡',
+  riverine_flooding: '🌊',
+  strong_wind: '💨',
+  tsunami: '🌊',
+  volcanic_activity: '🌋',
+  winter_weather: '❄️',
 };
 
 export const PropertyCard: React.FC<PropertyCardProps> = memo(({

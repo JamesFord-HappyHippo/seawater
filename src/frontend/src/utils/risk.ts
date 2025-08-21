@@ -1,4 +1,4 @@
-import { RiskLevel } from '@types';
+import { RiskLevel } from '../types';
 
 /**
  * Get the CSS color class for a risk level

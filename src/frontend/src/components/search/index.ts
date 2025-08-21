@@ -15,4 +15,4 @@ export type {
   LatLng,
   HazardType,
   RiskLevel,
-} from '@types';
+} from '../../types';

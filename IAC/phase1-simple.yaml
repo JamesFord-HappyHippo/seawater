@@ -4,11 +4,6 @@ Transform: AWS::Serverless-2016-10-31
 Description: 'Seawater Climate Risk Platform - Phase 1 Simple Infrastructure (Tim-Combo Pattern)'
 
 Parameters:
-  SeawaterBucketName:
-    Type: String
-    Default: seawater-dev-lambda
-    Description: S3 bucket for Lambda deployment packages
-  
   AppName:
     Description: Name of the application
     Type: String
@@ -20,11 +15,27 @@ Parameters:
     AllowedValues: [dev, staging, prod]
     Description: Environment name
   
+  # HoneyDo Cognito Integration (Reuse existing User Pool)
+  HoneyDoCognitoUserPoolId:
+    Type: String
+    Default: us-east-2_dnQfP90vt
+    Description: Existing HoneyDo Cognito User Pool ID
+  
+  HoneyDoCognitoClientId:
+    Type: String
+    Default: 4o4g5q8cg35na7bvbsnilbk98u
+    Description: Existing HoneyDo Cognito Client ID
+  
+  CognitoRegion:
+    Type: String
+    Default: us-east-2
+    Description: AWS Region for Cognito User Pool
+  
   # Database Configuration (external RDS instance)
   DatabaseHost:
     Type: String
-    Default: seawater-dev.cluster-xxx.us-east-2.rds.amazonaws.com
-    Description: PostgreSQL database host (external)
+    Default: dev-honeydo-pilot-db.cwkfm0ctmqb3.us-east-2.rds.amazonaws.com
+    Description: HoneyDo PostgreSQL database host (shared instance)
   
   DatabaseName:
     Type: String
@@ -33,14 +44,14 @@ Parameters:
   
   DatabaseUser:
     Type: String
-    Default: postgres
-    Description: Database username
+    Default: seawater_app
+    Description: Seawater application database user
   
   DatabasePassword:
     Type: String
     NoEcho: true
-    Default: TempPassword123!
-    Description: Database password
+    Default: SeawaterSecure123!
+    Description: Seawater database password
   
   DatabasePort:
     Type: String
@@ -57,8 +68,8 @@ Parameters:
   FEMAAPIKey:
     Type: String
     NoEcho: true
-    Default: optional_fema_key
-    Description: FEMA API key (optional)
+    Default: not_required_for_arcgis_api
+    Description: FEMA API key (not required for ArcGIS REST services, set for future premium services)
 
 Globals:
   Function:
@@ -76,23 +87,11 @@ Globals:
         MAPBOX_ACCESS_TOKEN: !Ref MapBoxAccessToken
         FEMA_API_KEY: !Ref FEMAAPIKey
         LOG_LEVEL: debug
+        COGNITO_USER_POOL_ID: !Ref HoneyDoCognitoUserPoolId
+        COGNITO_CLIENT_ID: !Ref HoneyDoCognitoClientId
+        COGNITO_REGION: !Ref CognitoRegion
 
 Resources:
-
-  # S3 Bucket for Lambda deployment packages
-  SeawaterLambdaBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref SeawaterBucketName
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
 
   # IAM Role for Lambda Functions (Tim-Combo pattern)
   LambdaExecutionRole:
@@ -119,27 +118,22 @@ Resources:
                   - rds:DescribeDBInstances
                   - rds:DescribeDBClusters
                 Resource: '*'
-        - PolicyName: SeawaterS3Access
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:PutObject
-                Resource: 
-                  - !Sub "${SeawaterLambdaBucket}/*"
 
-  # API Gateway (Tim-Combo pattern)
+  # API Gateway (Tim-Combo pattern with Cognito integration)
   SeawaterApi:
     Type: AWS::Serverless::Api
     Properties:
       Name: !Sub "${AppName}-${Environment}-API"
       StageName: !Ref Environment
       OpenApiVersion: 3.0.1
+      Auth:
+        DefaultAuthorizer: SeawaterCognitoAuthorizer
+        Authorizers:
+          SeawaterCognitoAuthorizer:
+            UserPoolArn: !Sub "arn:aws:cognito-idp:${CognitoRegion}:${AWS::AccountId}:userpool/${HoneyDoCognitoUserPoolId}"
       Cors:
         AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization,X-Api-Key'"
+        AllowHeaders: "'Content-Type,Authorization,X-Api-Key,X-Subscription-Tier'"
         AllowOrigin: "'*'"
         MaxAge: "'600'"
         AllowCredentials: false
@@ -150,6 +144,14 @@ Resources:
         DEFAULT_5XX:
           ResponseTemplates:
             "application/json": '{"message":"$context.error.messageString","requestId":"$context.requestId"}'
+        UNAUTHORIZED:
+          StatusCode: 401
+          ResponseTemplates:
+            "application/json": '{"message":"Unauthorized - Valid Seawater subscription required","requestId":"$context.requestId"}'
+        ACCESS_DENIED:
+          StatusCode: 403
+          ResponseTemplates:
+            "application/json": '{"message":"Access denied - Subscription tier insufficient","requestId":"$context.requestId"}'
 
   # Core Lambda Functions (No VPC configuration - internet access by default)
 
@@ -158,10 +160,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AppName}-${Environment}-HealthCheck"
-      CodeUri: 
-        Bucket: !Ref SeawaterLambdaBucket
-        Key: healthCheck.zip
-      Handler: healthCheck.handler
+      CodeUri: ../src/backend/dist/healthCheck/
+      Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Events:
         HealthCheck:
@@ -170,16 +170,16 @@ Resources:
             RestApiId: !Ref SeawaterApi
             Path: /health
             Method: GET
+            Auth:
+              Authorizer: NONE
 
   # Property Risk Assessment Function
   GetPropertyRiskFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AppName}-${Environment}-GetPropertyRisk"
-      CodeUri:
-        Bucket: !Ref SeawaterLambdaBucket
-        Key: getPropertyRisk.zip
-      Handler: getPropertyRisk.handler
+      CodeUri: ../src/backend/dist/getPropertyRisk/
+      Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Events:
         GetPropertyRisk:
@@ -188,16 +188,16 @@ Resources:
             RestApiId: !Ref SeawaterApi
             Path: /properties/{address}/risk
             Method: GET
+            Auth:
+              Authorizer: SeawaterCognitoAuthorizer
 
   # Property Comparison Function
   ComparePropertiesFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AppName}-${Environment}-CompareProperties"
-      CodeUri:
-        Bucket: !Ref SeawaterLambdaBucket
-        Key: compareProperties.zip
-      Handler: compareProperties.handler
+      CodeUri: ../src/backend/dist/compareProperties/
+      Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Events:
         CompareProperties:
@@ -206,16 +206,16 @@ Resources:
             RestApiId: !Ref SeawaterApi
             Path: /properties/compare
             Method: POST
+            Auth:
+              Authorizer: SeawaterCognitoAuthorizer
 
   # Geographic Risk Search Function
   GetGeographicRiskFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${AppName}-${Environment}-GeographicRisk"
-      CodeUri:
-        Bucket: !Ref SeawaterLambdaBucket
-        Key: getGeographicRisk.zip
-      Handler: getGeographicRisk.handler
+      CodeUri: ../src/backend/dist/getGeographicRisk/
+      Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Events:
         GeographicRisk:
@@ -224,6 +224,30 @@ Resources:
             RestApiId: !Ref SeawaterApi
             Path: /geographic/risk
             Method: GET
+            Auth:
+              Authorizer: SeawaterCognitoAuthorizer
+
+  # Bulk Property Risk Assessment Function
+  BulkPropertyRiskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-${Environment}-BulkPropertyRisk"
+      CodeUri: ../src/backend/dist/bulkPropertyRisk/
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 120
+      MemorySize: 1024
+      Events:
+        BulkPropertyRisk:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SeawaterApi
+            Path: /properties/bulk-risk
+            Method: POST
+            Auth:
+              Authorizer: SeawaterCognitoAuthorizer
+
+# Agent Configuration Functions will be added after core deployment
 
 Outputs:
   SeawaterApiUrl:
@@ -238,14 +262,27 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-ApiId'
 
-  LambdaBucket:
-    Description: 'S3 Bucket for Lambda packages'
-    Value: !Ref SeawaterLambdaBucket
-    Export:
-      Name: !Sub '${AWS::StackName}-LambdaBucket'
 
   DatabaseConnectionInfo:
     Description: 'Database connection details'
     Value: !Sub '${DatabaseHost}:${DatabasePort}/${DatabaseName}'
     Export:
       Name: !Sub '${AWS::StackName}-DatabaseInfo'
+
+  CognitoUserPoolId:
+    Description: 'HoneyDo Cognito User Pool ID (shared)'
+    Value: !Ref HoneyDoCognitoUserPoolId
+    Export:
+      Name: !Sub '${AWS::StackName}-CognitoUserPoolId'
+
+  CognitoClientId:
+    Description: 'HoneyDo Cognito Client ID (shared)'
+    Value: !Ref HoneyDoCognitoClientId
+    Export:
+      Name: !Sub '${AWS::StackName}-CognitoClientId'
+
+  CognitoRegion:
+    Description: 'Cognito Region'
+    Value: !Ref CognitoRegion
+    Export:
+      Name: !Sub '${AWS::StackName}-CognitoRegion'

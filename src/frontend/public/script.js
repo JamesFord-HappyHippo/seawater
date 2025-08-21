@@ -13,9 +13,136 @@ document.addEventListener('DOMContentLoaded', function() {
     // CTA button interactions
     initCTAButtons();
     
+    // Modal functionality
+    initModalFunctionality();
+    
+    // Pricing toggle
+    initPricingToggle();
+    
     // Scroll animations
     initScrollAnimations();
 });
+
+// Modal functionality
+function openWaitlistModal() {
+    const modal = document.getElementById('waitlistModal');
+    if (modal) {
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+        
+        // Focus on email input
+        setTimeout(() => {
+            const emailInput = modal.querySelector('input[type="email"]');
+            if (emailInput) emailInput.focus();
+        }, 300);
+    }
+}
+
+function closeWaitlistModal() {
+    const modal = document.getElementById('waitlistModal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+}
+
+function initModalFunctionality() {
+    const modal = document.getElementById('waitlistModal');
+    
+    if (modal) {
+        // Close modal when clicking outside
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                closeWaitlistModal();
+            }
+        });
+        
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeWaitlistModal();
+            }
+        });
+    }
+}
+
+// Submit waitlist form
+function submitWaitlist(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const email = form.querySelector('#email').value;
+    const userType = form.querySelector('#userType').value;
+    const notifications = form.querySelector('#notifications').checked;
+    
+    if (!email || !userType) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+    }
+    
+    // Simulate form submission
+    const submitBtn = form.querySelector('.submit-btn');
+    const originalText = submitBtn.textContent;
+    
+    submitBtn.textContent = 'Securing Your Spot...';
+    submitBtn.disabled = true;
+    
+    setTimeout(() => {
+        showNotification('🎉 Welcome to the waitlist! Check your email for confirmation.', 'success');
+        closeWaitlistModal();
+        
+        // Reset form
+        form.reset();
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+        
+        // Track conversion
+        console.log('Waitlist signup:', { email, userType, notifications });
+        
+        // In a real implementation, send to backend
+        // trackConversion('waitlist_signup', { email, userType, notifications });
+    }, 2000);
+}
+
+// Pricing toggle functionality
+function initPricingToggle() {
+    const toggle = document.getElementById('pricingToggle');
+    const monthlyPrices = document.querySelectorAll('.monthly-price');
+    const annualPrices = document.querySelectorAll('.annual-price');
+    
+    if (toggle) {
+        toggle.addEventListener('change', function() {
+            const isAnnual = this.checked;
+            
+            monthlyPrices.forEach(price => {
+                if (isAnnual) {
+                    price.classList.add('hidden');
+                } else {
+                    price.classList.remove('hidden');
+                }
+            });
+            
+            annualPrices.forEach(price => {
+                if (isAnnual) {
+                    price.classList.remove('hidden');
+                } else {
+                    price.classList.add('hidden');
+                }
+            });
+        });
+    }
+}
+
+// Scroll to demo section
+function scrollToDemo() {
+    const demoSection = document.getElementById('demo');
+    if (demoSection) {
+        demoSection.scrollIntoView({ 
+            behavior: 'smooth',
+            block: 'center'
+        });
+    }
+}
 
 // Smooth scrolling for navigation links
 function initSmoothScrolling() {
@@ -108,40 +235,30 @@ function initDemoFeatures() {
 
 // CTA button interactions
 function initCTAButtons() {
+    // Set up global functions for onclick handlers
+    window.openWaitlistModal = openWaitlistModal;
+    window.closeWaitlistModal = closeWaitlistModal;
+    window.submitWaitlist = submitWaitlist;
+    window.scrollToDemo = scrollToDemo;
+    
     const ctaButtons = document.querySelectorAll('.cta-button, .cta-primary, .pricing-cta');
     
     ctaButtons.forEach(button => {
+        // Skip buttons that have onclick handlers
+        if (button.hasAttribute('onclick')) return;
+        
         button.addEventListener('click', function() {
-            if (this.textContent.includes('Waitlist') || this.textContent.includes('Early Access')) {
-                // Scroll to waitlist signup
-                const waitlistSection = document.querySelector('.waitlist-signup');
-                if (waitlistSection) {
-                    waitlistSection.scrollIntoView({ 
-                        behavior: 'smooth',
-                        block: 'center'
-                    });
-                    
-                    // Focus on email input after scrolling
-                    setTimeout(() => {
-                        const emailInput = waitlistSection.querySelector('input[type="email"]');
-                        if (emailInput) emailInput.focus();
-                    }, 1000);
-                }
+            if (this.textContent.includes('Waitlist') || this.textContent.includes('Early Access') || this.textContent.includes('Get')) {
+                openWaitlistModal();
             }
         });
     });
     
-    // Watch Demo button
+    // Watch Demo button fallback
     const watchDemoButton = document.querySelector('.cta-secondary');
-    if (watchDemoButton) {
+    if (watchDemoButton && !watchDemoButton.hasAttribute('onclick')) {
         watchDemoButton.addEventListener('click', function() {
-            const demoSection = document.querySelector('#demo');
-            if (demoSection) {
-                demoSection.scrollIntoView({ 
-                    behavior: 'smooth',
-                    block: 'center'
-                });
-            }
+            scrollToDemo();
         });
     }
 }
@@ -386,16 +503,133 @@ document.addEventListener('DOMContentLoaded', function() {
         zone.addEventListener('click', function() {
             const riskLevel = this.classList.contains('high-risk') ? 'High' : 
                             this.classList.contains('medium-risk') ? 'Medium' : 'Low';
-            showNotification(`${riskLevel} risk zone selected. Full interactive mapping coming soon!`, 'info');
+            showNotification(`${riskLevel} risk zone selected. Join waitlist for full interactive mapping!`, 'info');
+            
+            // Encourage sign up after demo interaction
+            setTimeout(() => {
+                if (Math.random() > 0.5) { // 50% chance to show conversion prompt
+                    showNotification('Want early access to full features? Join the waitlist now!', 'success');
+                }
+            }, 3000);
         });
     });
     
     if (propertyMarker) {
         propertyMarker.addEventListener('click', function() {
-            showNotification('Property selected! Detailed risk analysis coming soon.', 'info');
+            showNotification('Property analysis preview - Join waitlist for detailed reports!', 'info');
+            
+            // Show conversion opportunity
+            setTimeout(() => {
+                const shouldShowCTA = Math.random() > 0.3; // 70% chance
+                if (shouldShowCTA) {
+                    showNotification('Get 50% off your first year - Early bird pricing ends soon!', 'warning');
+                }
+            }, 2000);
         });
     }
+    
+    // Add hover effects to testimonials
+    const testimonials = document.querySelectorAll('.testimonial');
+    testimonials.forEach(testimonial => {
+        testimonial.addEventListener('mouseenter', function() {
+            this.style.transform = 'translateY(-4px)';
+            this.style.boxShadow = '0 8px 25px rgba(0, 0, 0, 0.15)';
+            this.style.transition = 'all 0.3s ease';
+        });
+        
+        testimonial.addEventListener('mouseleave', function() {
+            this.style.transform = 'translateY(0)';
+            this.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+        });
+    });
+    
+    // Add conversion tracking for key interactions
+    trackUserEngagement();
 });
+
+// Track user engagement for conversion optimization
+function trackUserEngagement() {
+    let engagementScore = 0;
+    const engagementEvents = {
+        'scroll-50': false,
+        'demo-interaction': false,
+        'pricing-view': false,
+        'testimonial-read': false
+    };
+    
+    // Track scroll depth
+    window.addEventListener('scroll', () => {
+        const scrollPercent = (window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100;
+        
+        if (scrollPercent > 50 && !engagementEvents['scroll-50']) {
+            engagementEvents['scroll-50'] = true;
+            engagementScore += 25;
+            console.log('Engagement: User scrolled 50%');
+        }
+        
+        // Check if user reached pricing section
+        const pricingSection = document.querySelector('.pricing');
+        if (pricingSection && isElementInViewport(pricingSection) && !engagementEvents['pricing-view']) {
+            engagementEvents['pricing-view'] = true;
+            engagementScore += 30;
+            console.log('Engagement: User viewed pricing');
+            
+            // Show urgency notification for high-engagement users
+            if (engagementScore > 50) {
+                setTimeout(() => {
+                    showNotification('⚡ Limited time: 50% off early bird pricing ends soon!', 'warning');
+                }, 5000);
+            }
+        }
+    });
+    
+    // Track demo interactions
+    const demoElements = document.querySelectorAll('.zone, .property-marker, .risk-card');
+    demoElements.forEach(element => {
+        element.addEventListener('click', () => {
+            if (!engagementEvents['demo-interaction']) {
+                engagementEvents['demo-interaction'] = true;
+                engagementScore += 20;
+                console.log('Engagement: User interacted with demo');
+            }
+        });
+    });
+    
+    // Track testimonial reading
+    const testimonials = document.querySelectorAll('.testimonial');
+    testimonials.forEach(testimonial => {
+        testimonial.addEventListener('mouseenter', () => {
+            if (!engagementEvents['testimonial-read']) {
+                engagementEvents['testimonial-read'] = true;
+                engagementScore += 15;
+                console.log('Engagement: User read testimonials');
+            }
+        });
+    });
+    
+    // Exit intent detection (simplified)
+    document.addEventListener('mouseleave', (e) => {
+        if (e.clientY <= 0 && engagementScore > 40) {
+            setTimeout(() => {
+                if (!document.getElementById('waitlistModal').style.display || 
+                    document.getElementById('waitlistModal').style.display === 'none') {
+                    showNotification('Wait! Get 50% off early access before you go!', 'warning');
+                }
+            }, 500);
+        }
+    });
+}
+
+// Helper function to check if element is in viewport
+function isElementInViewport(el) {
+    const rect = el.getBoundingClientRect();
+    return (
+        rect.top >= 0 &&
+        rect.left >= 0 &&
+        rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+        rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+    );
+}
 
 // Easter egg: Konami code
 let konamiCode = [];

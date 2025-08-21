@@ -1,0 +1,174 @@
+{
+  "expo": {
+    "name": "Seawater Climate Platform",
+    "slug": "seawater-climate-platform",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1E40AF"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.seawater.climate-platform",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Seawater uses your location to provide accurate climate risk assessments for your area.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Seawater uses your location to provide accurate climate risk assessments and alerts for your area.",
+        "NSCameraUsageDescription": "Seawater uses your camera to scan property documents and capture environmental conditions.",
+        "NSPhotoLibraryUsageDescription": "Seawater accesses your photo library to analyze property images for climate risk assessment.",
+        "NSMicrophoneUsageDescription": "Seawater uses your microphone for voice notes and emergency communications.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "seawater-climate-platform",
+            "CFBundleURLSchemes": ["seawater-climate-platform"]
+          }
+        ]
+      },
+      "associatedDomains": [
+        "applinks:seawater.io",
+        "applinks:www.seawater.io"
+      ]
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1E40AF"
+      },
+      "package": "com.seawater.climate_platform",
+      "versionCode": 1,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECORD_AUDIO",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "seawater.io"
+            },
+            {
+              "scheme": "https",
+              "host": "www.seawater.io"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-dev-client",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Seawater uses your location to provide accurate climate risk assessments and alerts for your area.",
+          "locationAlwaysPermission": "Seawater uses your location to provide accurate climate risk assessments and alerts for your area.",
+          "locationWhenInUsePermission": "Seawater uses your location to provide accurate climate risk assessments for your area."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Seawater uses your camera to scan property documents and capture environmental conditions."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Seawater accesses your photo library to analyze property images for climate risk assessment.",
+          "savePhotosPermission": "Seawater saves climate risk reports and property assessments to your photo library."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1E40AF",
+          "defaultChannel": "climate-alerts"
+        }
+      ],
+      [
+        "@react-native-async-storage/async-storage"
+      ],
+      [
+        "expo-secure-store"
+      ],
+      [
+        "expo-linking",
+        {
+          "scheme": "seawater-climate-platform"
+        }
+      ],
+      [
+        "expo-updates",
+        {
+          "username": "seawater-climate"
+        }
+      ],
+      [
+        "@sentry/react-native/expo"
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "seawater-climate-platform-project-id"
+      },
+      "apiUrl": {
+        "development": "https://dev-api.seawater.io",
+        "test": "https://test-api.seawater.io", 
+        "staging": "https://staging-api.seawater.io",
+        "production": "https://api.seawater.io"
+      },
+      "mapboxAccessToken": {
+        "development": "$MAPBOX_DEV_TOKEN",
+        "test": "$MAPBOX_TEST_TOKEN",
+        "staging": "$MAPBOX_STAGING_TOKEN",
+        "production": "$MAPBOX_PROD_TOKEN"
+      },
+      "sentryDsn": {
+        "development": "$SENTRY_DEV_DSN",
+        "test": "$SENTRY_TEST_DSN",
+        "staging": "$SENTRY_STAGING_DSN",
+        "production": "$SENTRY_PROD_DSN"
+      },
+      "analyticsEnabled": {
+        "development": false,
+        "test": true,
+        "staging": true,
+        "production": true
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/seawater-climate-platform-project-id"
+    },
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    }
+  }
+}

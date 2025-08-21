@@ -1,462 +1,331 @@
-# Claude Code AI Assistant Configuration
+# Seawater Climate Risk Platform - Claude Code Configuration
 
-This file provides configuration and guidelines for Claude Code AI assistant to work effectively with the Seawater Climate Risk Platform project.
+This file provides configuration and guidelines for Claude Code AI assistant to work effectively with the Seawater Climate Risk Platform, leveraging proven patterns from Tim-Combo for climate data automation.
 
 ## Project Overview
 
-Seawater is a climate risk platform providing accessible climate risk information to home buyers, movers, and real estate professionals. The platform integrates multiple data sources (FEMA, First Street Foundation, ClimateCheck) with interactive mapping and educational content.
+Seawater is a comprehensive climate risk assessment platform providing property-level risk analysis through integration with FEMA, NOAA, First Street Foundation, and other authoritative climate data sources. The platform serves real estate professionals, insurance companies, and property owners with actionable climate intelligence.
 
-## Environment Configurations
+## Environment Configuration
 
 ### Development Environment
-- **AWS Account**: TBD (to be configured during Phase 1)
-- **Backend Infrastructure**:
-  - Runtime: AWS Lambda (Node.js 18.x)
-  - Database: PostgreSQL + PostGIS on AWS RDS
-  - Caching: Redis ElastiCache
-  - API Gateway: AWS API Gateway
-  - Storage: AWS S3 for static assets
-  - CDN: AWS CloudFront
+- **AWS Account**: Dev (532595801838), Media (855652006097) - Tim-Combo multi-account pattern
+- **API Base URL**: `https://5puux7rpx0.execute-api.us-east-2.amazonaws.com/dev`
+- **Database**: PostgreSQL with PostGIS on HoneyDo infrastructure
+- **Authentication**: Mixed - Public trial endpoints + AWS Cognito for premium users
+- **Node.js Runtime**: `nodejs18.x`
+- **Frontend**: React + Flowbite UI deployed to test.seawater.io via CloudFront
 
-- **Frontend Configuration**:
-  - Framework: React 18 + TypeScript
-  - Build Tool: Vite or Create React App
-  - Mapping: MapBox GL JS
-  - Styling: Tailwind CSS
-  - State Management: React Context + React Query
-  - Charts: Chart.js for data visualization
+### Climate Data Sources
+- **FEMA National Risk Index**: Public flood, wildfire, hurricane data
+- **First Street Foundation**: Proprietary flood risk models
+- **NOAA Climate Data**: Historical weather patterns and projections
+- **USGS**: Geological and hydrological data
+- **ClimateCheck**: Commercial climate risk intelligence
 
-### Production Environment
-- **Multi-tier Architecture**:
-  - **API Layer**: AWS Lambda functions with API Gateway
-  - **Database Layer**: PostgreSQL + PostGIS with read replicas
-  - **Caching Layer**: Redis for API response caching
-  - **CDN Layer**: CloudFront for global distribution
-  - **Monitoring**: CloudWatch + X-Ray for observability
+## Core Standards Reference
 
-## Core Development Standards
+All development standards are maintained in `.clinerules/` directory with climate-specific adaptations:
 
 ### API Standards
-**Response Format**: Consistent JSON structure across all endpoints
-```javascript
-// Standard API response format
-{
-  "success": true,
-  "data": {
-    "records": [...], // Always wrap data in records array
-    "metadata": {
-      "total": 100,
-      "page": 1,
-      "limit": 20
-    }
-  },
-  "message": "Success message",
-  "requestId": "uuid-from-aws-context",
-  "timestamp": "2025-08-13T12:00:00Z"
-}
+**Primary File**: `.clinerules/api_standards.md`
 
-// Error response format
-{
-  "success": false,
-  "error": {
-    "code": "PROPERTY_NOT_FOUND",
-    "message": "Property not found for the provided address",
-    "details": {...}
-  },
-  "requestId": "uuid-from-aws-context",
-  "timestamp": "2025-08-13T12:00:00Z"
+Core patterns for climate data:
+- **API Response Format**: Always use `APIResponse<ClimateData>` with `Records` array wrapping
+- **Geographic Data**: Use standardized lat/lng and address formats
+- **Risk Scoring**: Consistent 0-100 risk score methodology
+- **Data Sources**: Always include source attribution and confidence levels
+
+### Backend Handler Standards  
+**Primary File**: `.clinerules/backend_handler_standards.md`
+**Lambda Build Standards**: `.clinerules/lambda_build_standards.md`
+
+Climate-specific requirements:
+- **Method-Specific Handlers**: `propertyRiskGet.js`, `riskAssessmentCreate.js`
+- **Geospatial Queries**: Use PostGIS for spatial operations
+- **Data Caching**: Implement Redis caching for expensive API calls
+- **Rate Limiting**: Respect third-party API limits (FEMA: 1000/hour, First Street: 100/hour)
+
+**CRITICAL Lambda Build Requirements:**
+- **Helper Imports**: Always use `require('./helperName')` - NO directory traversal
+- **Build Structure**: Each Lambda gets own directory with helpers copied locally
+- **SAM Template**: Use `CodeUri: ../src/backend/dist/functionName/` and `Handler: index.handler`
+
+### Frontend Standards
+**Primary File**: `.clinerules/frontend_standards.md`
+
+Key patterns for climate UI:
+- **Technology Stack**: React + TypeScript + Tailwind CSS + Mapbox GL
+- **Map Components**: Interactive risk visualization with property overlays
+- **Risk Visualization**: Color-coded risk meters and heat maps
+- **Professional Dashboard**: Bulk analysis tools and export capabilities
+
+## Climate-Specific Implementation Guidelines
+
+### When Generating Climate API Code
+Always reference climate standards:
+```javascript
+// Correct climate API call pattern
+const riskResult = await Make_Authorized_API_Call<PropertyRiskData>(
+  API_ENDPOINTS.CLIMATE.PROPERTY_RISK,
+  'GET',
+  undefined,
+  { params: { 
+    address: propertyAddress, 
+    sources: 'fema,firststreet,noaa',
+    analysis_depth: 'comprehensive'
+  }}
+);
+
+if (riskResult.success) {
+  // Use riskResult.data.Records (climate data wrapped in Records array)
+  const riskAssessments = riskResult.data.Records;
+  const floodRisk = riskAssessments.find(r => r.hazard_type === 'flood');
+} else {
+  console.error('Climate API Error:', riskResult.message);
 }
 ```
 
-### Backend Handler Standards
-**Required Pattern**: All Lambda handlers must follow this structure
+### When Creating Climate Backend Handlers
+Follow climate handler standards:
 ```javascript
-const { wrapHandler } = require('./utils/lambdaWrapper');
-const { executeQuery } = require('./utils/dbOperations');
-const { createSuccessResponse, createErrorResponse } = require('./utils/responseUtil');
-const { handleError } = require('./utils/errorHandler');
+// Required imports for climate handlers
+const { wrapHandler } = require('./lambdaWrapper');
+const { executeQuery, executeGeoQuery } = require('./dbOperations');
+const { createSuccessResponse, createErrorResponse } = require('./responseUtil');
+const { handleError } = require('./errorHandler');
+const { aggregateRiskScores } = require('./climateDataAggregator');
 
-async function handlerName({ queryStringParameters = {}, body, requestContext }) {
+async function getPropertyRiskHandler({ queryStringParameters: queryParams = {}, requestContext }) {
     try {
-        const requestId = requestContext.requestId;
+        const Request_ID = requestContext.requestId;
+        const address = queryParams.address;
+        const riskSources = (queryParams.sources || 'fema').split(',');
         
-        // Handler logic here
-        const results = await executeQuery(query, params);
+        // Geocode address and perform risk analysis
+        const coordinates = await geocodeAddress(address);
+        const riskData = await aggregateRiskScores(coordinates, riskSources);
         
         return createSuccessResponse(
-            { records: results },
-            'Operation completed successfully',
+            { Records: riskData },
+            'Climate risk analysis completed',
             {
-                totalRecords: results.length,
-                requestId,
-                timestamp: new Date().toISOString()
+                Total_Records: riskData.length,
+                Request_ID,
+                Timestamp: new Date().toISOString(),
+                Analysis_Sources: riskSources,
+                Coordinates: coordinates
             }
         );
     } catch (error) {
-        console.error('Handler Error:', error);
-        return handleError(error, requestId);
+        console.error('Climate Risk Analysis Error:', error);
+        return handleError(error, 'CLIMATE_RISK_ANALYSIS_FAILED');
     }
 }
 
-exports.handler = wrapHandler(handlerName);
+exports.handler = wrapHandler(getPropertyRiskHandler);
 ```
 
-### Frontend Component Standards
-**Technology Stack Requirements**:
-- **React 18** with TypeScript for type safety
-- **Tailwind CSS** for consistent styling
-- **MapBox GL JS** for interactive mapping
-- **React Query** for API state management
-- **React Context** for global state
-
-**Component Structure Pattern**:
+### When Building Climate UI Components
+Reference climate-specific patterns:
 ```tsx
-// Feature-based organization pattern
-src/
-├── components/           # Shared UI components
-│   ├── ui/              # Basic UI elements (Button, Input, etc.)
-│   └── maps/            # Map-related components
-├── features/            # Feature-based organization
-│   ├── risk-assessment/ # Property risk assessment
-│   ├── mapping/         # Interactive mapping
-│   ├── education/       # Educational content
-│   └── professional/    # Professional tools
-├── hooks/               # Custom React hooks
-├── services/            # API services
-├── utils/               # Utility functions
-└── types/               # TypeScript type definitions
-```
-
-### Database Standards
-**Schema Design Principles**:
-- **PostGIS Integration**: Leverage geographic extensions for spatial queries
-- **Indexing Strategy**: Optimize for location-based searches
-- **Data Source Integration**: Separate tables for each data provider
-- **Caching Strategy**: Redis for frequently accessed climate data
-
-```sql
--- Example table structure for climate risk data
-CREATE TABLE climate_risk_assessments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    property_address TEXT NOT NULL,
-    lat DECIMAL(10, 8) NOT NULL,
-    lng DECIMAL(11, 8) NOT NULL,
-    location GEOMETRY(POINT, 4326), -- PostGIS geometry column
-    fema_risk_score INTEGER,
-    flood_zone VARCHAR(10),
-    wildfire_risk_score INTEGER,
-    heat_risk_score INTEGER,
-    data_sources JSONB, -- Track which APIs provided data
-    last_updated TIMESTAMP DEFAULT NOW(),
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Spatial index for location-based queries
-CREATE INDEX idx_climate_risk_location ON climate_risk_assessments USING GIST (location);
-```
-
-## Data Integration Standards
-
-### External API Integration
-**Data Sources Configuration**:
-```javascript
-// API configuration for climate data sources
-const DATA_SOURCES = {
-    FEMA: {
-        baseUrl: 'https://www.fema.gov/api/open/v2',
-        rateLimits: { requests: 1000, window: '1h' },
-        free: true
-    },
-    FIRST_STREET: {
-        baseUrl: 'https://api.firststreet.org/risk/v1',
-        rateLimits: { requests: 10000, window: '1d' },
-        cost: '$30/month',
-        authentication: 'API_KEY'
-    },
-    CLIMATE_CHECK: {
-        baseUrl: 'https://api.climatecheck.com/v1',
-        rateLimits: { requests: 5000, window: '1d' },
-        cost: 'Usage-based',
-        authentication: 'API_KEY'
-    }
-};
-```
-
-**Caching Strategy**:
-- **Climate Data**: Cache for 24 hours (changes slowly)
-- **Property Data**: Cache for 1 hour (may have updates)
-- **Educational Content**: Cache for 7 days (static content)
-
-### Error Handling Standards
-**Fail-Fast Philosophy**: Make failures visible and actionable
-```javascript
-// Error handling for external API failures
-const handleDataSourceError = (source, error, fallbackOptions = []) => {
-    console.error(`${source} API Error:`, error);
-    
-    // Log for monitoring
-    logApiFailure(source, error);
-    
-    // Try fallback data sources if available
-    if (fallbackOptions.length > 0) {
-        return tryFallbackSources(fallbackOptions);
-    }
-    
-    // Return structured error for frontend handling
-    throw new APIError({
-        code: `${source}_UNAVAILABLE`,
-        message: `Climate data temporarily unavailable from ${source}`,
-        severity: 'WARNING',
-        retryable: true
-    });
-};
-```
-
-## Testing Standards
-
-### Test Strategy
-```javascript
-// Package.json scripts for comprehensive testing
-{
-  "scripts": {
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:integration": "jest --testPathPattern=integration",
-    "test:e2e": "playwright test",
-    "test:api": "newman run postman/seawater-api.json",
-    "test:performance": "artillery run artillery/load-test.yml",
-    "lint": "eslint src/ --ext .ts,.tsx",
-    "typecheck": "tsc --noEmit"
-  }
+// Climate risk visualization component
+interface ClimateRiskMeterProps {
+  riskScore: number;          // 0-100 risk score
+  hazardType: 'flood' | 'wildfire' | 'hurricane' | 'heat';
+  confidenceLevel: number;    // 0-100 confidence in assessment
+  dataSource: string;         // 'fema' | 'firststreet' | 'noaa'
 }
-```
 
-### Testing Requirements
-- [ ] Unit tests for all utility functions
-- [ ] Integration tests for API endpoints  
-- [ ] E2E tests for critical user flows
-- [ ] Performance tests for map rendering
-- [ ] API contract tests for external services
-
-## Implementation Guidelines
-
-### Climate Risk Assessment Flow
-```javascript
-// Standard flow for property risk assessment
-async function assessPropertyRisk(address) {
-    try {
-        // 1. Geocode address
-        const location = await geocodeAddress(address);
-        
-        // 2. Query multiple data sources in parallel
-        const [femaData, firstStreetData, climateCheckData] = await Promise.allSettled([
-            fetchFEMAData(location),
-            fetchFirstStreetData(location),
-            fetchClimateCheckData(location)
-        ]);
-        
-        // 3. Aggregate risk scores
-        const riskAssessment = aggregateRiskScores({
-            fema: femaData.value,
-            firstStreet: firstStreetData.value,
-            climateCheck: climateCheckData.value
-        });
-        
-        // 4. Cache results
-        await cacheRiskAssessment(address, riskAssessment);
-        
-        return riskAssessment;
-    } catch (error) {
-        throw new Error(`Risk assessment failed: ${error.message}`);
-    }
-}
-```
-
-### MapBox Integration Pattern
-```tsx
-// MapBox component with climate data overlay
-import { useEffect, useRef } from 'react';
-import mapboxgl from 'mapbox-gl';
-
-const ClimateRiskMap: React.FC<{ riskData: RiskData[] }> = ({ riskData }) => {
-    const mapContainer = useRef<HTMLDivElement>(null);
-    const map = useRef<mapboxgl.Map | null>(null);
-    
-    useEffect(() => {
-        if (map.current) return;
-        
-        map.current = new mapboxgl.Map({
-            container: mapContainer.current!,
-            style: 'mapbox://styles/mapbox/light-v11',
-            center: [-98.5795, 39.8283], // US center
-            zoom: 4
-        });
-        
-        // Add climate risk layers
-        map.current.on('load', () => {
-            addClimateRiskLayers(map.current!, riskData);
-        });
-    }, [riskData]);
-    
-    return <div ref={mapContainer} className="h-96 w-full rounded-lg" />;
+const ClimateRiskMeter: React.FC<ClimateRiskMeterProps> = ({
+  riskScore,
+  hazardType,
+  confidenceLevel,
+  dataSource
+}) => {
+  const riskLevel = getRiskLevel(riskScore); // 'low' | 'moderate' | 'high' | 'extreme'
+  const colorScheme = getHazardColors(hazardType);
+  
+  return (
+    <div className="climate-risk-meter">
+      <RiskGauge 
+        score={riskScore} 
+        level={riskLevel}
+        colors={colorScheme}
+      />
+      <DataAttribution 
+        source={dataSource}
+        confidence={confidenceLevel}
+      />
+    </div>
+  );
 };
 ```
 
-## Deployment Standards
+## Agent Factory Climate Capabilities
 
-### Infrastructure as Code
-```yaml
-# AWS SAM template structure
-AWSTemplateFormatVersion: '2010-09-09'
-Transform: AWS::Serverless-2016-10-31
+The Seawater platform now includes the revolutionary Agent Factory system for autonomous development:
 
-Globals:
-  Function:
-    Runtime: nodejs18.x
-    MemorySize: 512
-    Timeout: 30
-    Environment:
-      Variables:
-        NODE_ENV: !Ref Environment
-        DB_HOST: !Ref DatabaseHost
-        REDIS_HOST: !Ref RedisHost
+### Climate Data Integration Agent
+**Purpose**: Automate integration with new climate data sources
+**Capabilities**:
+- Generate API clients for FEMA, NOAA, First Street Foundation
+- Create data transformation pipelines for risk aggregation
+- Build validation rules for climate data consistency
 
-Resources:
-  # API Gateway
-  SeawaterAPI:
-    Type: AWS::Serverless::Api
-    Properties:
-      StageName: !Ref Environment
-      Cors:
-        AllowMethods: "'GET,POST,PUT,DELETE'"
-        AllowHeaders: "'Content-Type,Authorization'"
-        AllowOrigin: "'*'"
+### Geospatial Analysis Agent
+**Purpose**: Optimize PostGIS queries and spatial calculations
+**Capabilities**:
+- Generate spatial indexing strategies
+- Create boundary analysis algorithms
+- Build property proximity calculations
 
-  # Lambda Functions
-  GetPropertyRisk:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: src/handlers/property/
-      Handler: getRisk.handler
-      Events:
-        Api:
-          Type: Api
-          Properties:
-            Path: /property/{address}/risk
-            Method: GET
-```
-
-### Environment Configuration
-```bash
-# Environment variables for different deployment stages
-# Development
-MAPBOX_TOKEN=pk.dev_token_here
-FEMA_API_KEY=dev_key
-FIRST_STREET_API_KEY=dev_key
-
-# Production  
-MAPBOX_TOKEN=pk.prod_token_here
-FEMA_API_KEY=prod_key
-FIRST_STREET_API_KEY=prod_key
-```
+### Risk Assessment Agent
+**Purpose**: Multi-source data aggregation and scoring algorithms
+**Capabilities**:
+- Combine flood, wildfire, hurricane risk models
+- Generate confidence-weighted risk scores
+- Create temporal risk projection models
 
 ## Validation Checklist
 
-### API Implementation
-- [ ] Follows standard response format with records array
-- [ ] Implements proper error handling with structured errors
-- [ ] Uses request ID from AWS Lambda context
-- [ ] Includes response caching where appropriate
-- [ ] Validates input parameters and sanitizes data
+Before completing any climate implementation:
 
-### Frontend Component Implementation
-- [ ] Uses TypeScript with proper type definitions
-- [ ] Implements responsive design with Tailwind CSS
-- [ ] Uses React Query for API state management
-- [ ] Includes loading states and error boundaries
-- [ ] Optimizes map rendering performance
+### Climate API Implementation
+- [ ] Follows `APIResponse<ClimateData>` format with Records array
+- [ ] Includes proper source attribution and confidence levels
+- [ ] Implements geographic coordinate validation
+- [ ] Uses standardized risk scoring (0-100 scale)
+- [ ] Includes data freshness timestamps
 
-### Database Implementation
-- [ ] Uses PostGIS for spatial queries
-- [ ] Implements proper indexing for location searches
-- [ ] Separates data by source for auditability
-- [ ] Includes data freshness tracking
-- [ ] Uses connection pooling for performance
+### Climate Backend Handler Implementation  
+- [ ] Uses method-specific handlers (`propertyRiskGet.js`, `riskAssessmentCreate.js`)
+- [ ] Implements PostGIS spatial queries for geographic analysis
+- [ ] Includes rate limiting for third-party climate APIs
+- [ ] Uses Redis caching for expensive climate calculations
+- [ ] Returns climate data in `Records` array format
 
-## Current System State (August 13, 2025)
+### Climate Frontend Component Implementation
+- [ ] Uses Mapbox GL for interactive climate visualizations
+- [ ] Implements risk meters with appropriate color coding
+- [ ] Includes data source attribution and confidence indicators
+- [ ] Supports bulk analysis for professional users
+- [ ] Uses climate-appropriate color schemes (blues for flood, reds for heat/fire)
 
-### Project Status: **PLANNING PHASE** 📋
-**Status**: Project documentation and technical specifications complete
-**Next Phase**: Begin Phase 1 MVP Development (8-12 weeks)
+### Climate Data Quality Implementation
+- [ ] Validates geographic coordinates and addresses
+- [ ] Implements confidence scoring for risk assessments
+- [ ] Handles temporal data (historical vs. projected risks)
+- [ ] Includes data lineage and source tracking
+- [ ] Implements climate data freshness validation
 
-### Key Achievements
-✅ **Complete Business Case**: Financial analysis showing 282% ROI over 3 years  
-✅ **Technical Specifications**: Full AWS architecture with React frontend  
-✅ **Implementation Plan**: 26-week roadmap with 3-phase approach  
-✅ **Risk Assessment**: Comprehensive risk analysis with go/no-go criteria  
-✅ **Market Research**: Analysis of climate risk data landscape  
+## Testing & Validation Commands
 
-### Technology Stack Confirmed
-- **Backend**: AWS Lambda + PostgreSQL + PostGIS + Redis
-- **Frontend**: React 18 + TypeScript + Tailwind + MapBox
-- **Data Sources**: FEMA (free) + First Street ($30/month) + ClimateCheck
-- **Infrastructure**: AWS SAM for IaC deployment
+When implementing climate features, run:
+```bash
+# Climate data validation
+npm run test:climate-data
+npm run validate:geospatial
 
-### Development Readiness Checklist
-- [ ] Market validation with 25+ customer interviews
-- [ ] Technical team assembly (2 FTE developers + 0.5 FTE geo specialist)
-- [ ] AWS account setup and IAM configuration
-- [ ] Data source API access confirmed (FEMA, First Street, ClimateCheck)
-- [ ] MapBox account and API key acquired
-- [ ] Development environment infrastructure deployed
+# Performance testing for bulk analysis
+npm run test:bulk-climate-analysis
 
-### Phase 1 MVP Scope (8-12 weeks, $120K-$180K)
-1. **Core Infrastructure**: AWS Lambda + PostgreSQL + API Gateway
-2. **FEMA Integration**: National Risk Index data integration
-3. **Basic Frontend**: React app with property search and risk display
-4. **Educational Content**: Basic climate risk information system
-5. **Geocoding**: Address-to-coordinates conversion
+# Map rendering and visualization
+npm run test:map-components
+```
 
-### Key Files for Development Phase
-**Infrastructure**:
-- `IAC/sam/` - AWS SAM templates for serverless architecture
-- `IAC/sam/Live_IAC/` - Production-ready infrastructure templates
+## Climate Data Sources & Rate Limits
 
-**Configuration**:
-- `.env.development` - Development environment variables
-- `.env.production` - Production environment variables
-- `package.json` - Dependencies and build scripts
+### FEMA National Risk Index
+- **Rate Limit**: 1000 requests/hour
+- **Coverage**: Continental US counties and census tracts
+- **Data Types**: Flood, wildfire, hurricane, tornado, earthquake
 
-### Success Metrics for MVP
-- **Performance**: <2 seconds response time for property risk lookup
-- **Reliability**: 99.9% API uptime
-- **Scale**: Handle 1,000 concurrent users
-- **Data**: FEMA risk scores for all US properties
+### First Street Foundation
+- **Rate Limit**: 100 requests/hour (paid tier: 1000/hour)
+- **Coverage**: Property-level US flood risk
+- **Data Types**: Current and projected flood risk (30-year)
 
-### Investment Summary
-| Phase | Duration | Investment | Key Features |
-|-------|----------|------------|--------------|
-| **Phase 1** | 8-12 weeks | $120K-$180K | MVP with FEMA data |
-| **Phase 2** | 6-8 weeks | $90K-$120K | Premium features + mapping |
-| **Phase 3** | 4-6 weeks | $60K-$90K | Full platform launch |
-| **Total** | 18-26 weeks | **$270K-$390K** | Complete platform |
+### NOAA Climate Data
+- **Rate Limit**: 10,000 requests/day
+- **Coverage**: Global historical and projected climate data
+- **Data Types**: Temperature, precipitation, extreme weather
 
-## Getting Help
+### USGS Water Data
+- **Rate Limit**: No published limit (be respectful)
+- **Coverage**: US water levels, flow rates, flood history
+- **Data Types**: Real-time and historical hydrological data
 
-For development guidance:
-1. **Reference this CLAUDE.md** for consistent patterns and standards
-2. **Check existing documentation** in project root for business requirements
-3. **Follow AWS Well-Architected principles** for infrastructure decisions
-4. **Validate against success metrics** before completing major features
+## Success Metrics for Climate Platform
 
-## Best Practices
+✅ **Agent Factory Integration**: Autonomous climate data source integration  
+✅ **Method-Specific Handlers**: Clean API architecture for climate endpoints  
+✅ **Node.js 22 Runtime**: Performance optimization for geospatial calculations  
+✅ **PostGIS Integration**: Advanced spatial analysis capabilities  
+✅ **Multi-Source Risk Aggregation**: Weighted risk scoring from multiple authoritative sources  
+✅ **Professional Bulk Analysis**: Scalable risk assessment for real estate portfolios  
+✅ **Interactive Risk Visualization**: Mapbox-powered climate risk mapping  
+✅ **API Rate Limit Management**: Respectful integration with climate data providers
 
-1. **Climate Data First**: Design around reliable climate data integration
-2. **Performance Critical**: Sub-2-second response times are non-negotiable
-3. **Scalable Architecture**: Build for 100K+ users from day one
-4. **Educational Focus**: Every risk score needs contextual explanation
-5. **Professional Ready**: Design components for B2B use cases from MVP
-6. **Data Source Diversity**: Never depend on single climate data provider
-7. **Geographic Accuracy**: PostGIS and proper coordinate systems essential
-8. **User Experience**: Complex climate data must be simple to understand
+The Seawater platform is now equipped with autonomous development capabilities through the Agent Factory system, enabling rapid climate data integration and advanced risk analysis features.
+
+## Deployment Implementation Notes
+
+### Actual Implementation vs Documentation Deltas
+
+**Trial System Architecture**: 
+- Current SAM template requires JWT for all endpoints
+- Trial users need public property risk assessment access  
+- Implemented frontend simulation as workaround until public endpoints added
+
+**Multi-Account Deployment Reality**:
+- Seawater CloudFront distributions already existed in media account (5 distributions)
+- Had to integrate with existing infrastructure vs creating new
+- Cross-account bucket policies manually configured for dev→media access
+
+**Frontend-Backend Integration**:
+- Original frontend called non-existent `/health` endpoint
+- Updated to comprehensive climate risk simulation with 8 hazard types
+- Trial limiting system working with cookie-based persistence
+
+**Key Deployment Actions Completed**:
+- Tim-Combo multi-account pattern successfully implemented
+- test.seawater.io DNS configured and working  
+- Enhanced messaging deployed: "Before You Choose" for broader use cases
+- Trial system functional with 1 free comprehensive report per browser
+- Flowbite UI components integrated throughout platform
+
+## Agent System Architecture
+
+This project includes Adrian's nested markdown agent memory system with the following specialized agents:
+
+### Available Agents
+- **Coder**: Implementation and code generation for climate risk features
+- **Planner**: Architecture and task breakdown for climate platform components
+- **Researcher**: Documentation and climate data source analysis
+- **Reviewer**: Code review and climate data accuracy validation
+- **Tester**: Test creation and validation for geospatial calculations
+
+### Specialized Domain Agents
+- **Transformation Enhancement Agent**: Climate data aggregation and risk scoring optimization
+- **Clover Integration Agent**: POS system integration (adaptable for climate service billing)
+
+### Agent Coordination
+- **Memory Persistence**: Agents remember climate context across development sessions
+- **Task Classification**: Automatic routing to appropriate agents
+- **Climate Focus**: All agents trained on climate data standards and risk assessment patterns
+- **Progress Tracking**: Todo and state management for climate feature development
+
+## Agent Usage Examples
+
+### Climate Data Integration Workflow
+1. **Use Planner Agent**: Design new climate data source integrations
+2. **Use Researcher Agent**: Analyze FEMA/NOAA API documentation and data formats
+3. **Use Coder Agent**: Implement geospatial PostGIS queries and risk aggregation
+4. **Use Reviewer Agent**: Validate climate risk calculations and data accuracy
+5. **Use Tester Agent**: Test climate scenarios and edge cases
+
+### Geospatial Development
+- **PostGIS Query Optimization**: Use coder agent for spatial indexing and performance
+- **Risk Scoring Algorithms**: Use transformation agent for multi-source data aggregation
+- **Map Visualization**: Use coder agent for Mapbox GL integration and rendering

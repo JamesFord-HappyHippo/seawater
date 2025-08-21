@@ -2,6 +2,7 @@
 // GET /properties/{address}/risk handler following Tim-Combo patterns
 
 const { wrapHandler } = require('../../helpers/lambdaWrapper');
+const { withTrialEnforcement } = require('../../helpers/trialMiddleware');
 const { validateRequest } = require('../../helpers/validationUtil');
 const { createPropertyRiskResponse, createErrorResponse } = require('../../helpers/responseUtil');
 const { NotFoundError, ClimateDataError } = require('../../helpers/errorHandler');
@@ -262,6 +263,12 @@ async function getPropertyRiskHandler(event, context) {
     }
 }
 
+// Export with trial enforcement middleware
 module.exports = {
-    handler: wrapHandler(getPropertyRiskHandler)
+    handler: withTrialEnforcement(wrapHandler(getPropertyRiskHandler), {
+        usageType: 'risk_assessment',
+        trackUsage: true,
+        requireTrial: true,
+        allowPaidUsers: true
+    })
 };

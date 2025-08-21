@@ -1,0 +1,21 @@
+{
+  "name": "seawater-marketing-consent",
+  "version": "1.0.0",
+  "description": "GDPR-compliant marketing consent management for Seawater",
+  "main": "index.js",
+  "dependencies": {
+    "pg": "^8.11.3",
+    "uuid": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "gdpr",
+    "consent",
+    "marketing",
+    "seawater"
+  ]
+}

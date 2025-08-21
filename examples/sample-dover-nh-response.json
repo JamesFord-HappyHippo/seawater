@@ -1,0 +1,379 @@
+{
+  "success": true,
+  "data": {
+    "property": {
+      "address": "19 Roosevelt Ave, Dover, NH 03820",
+      "normalizedAddress": "19 roosevelt ave dover nh 03820",
+      "location": {
+        "latitude": 43.1978,
+        "longitude": -70.8737,
+        "elevation": {
+          "feet": 52,
+          "meters": 15.8
+        },
+        "county": "Strafford County",
+        "state": "New Hampshire",
+        "zipCode": "03820",
+        "timezone": "America/New_York"
+      },
+      "propertyDetails": {
+        "parcelId": "NH-STR-252-019-000",
+        "lotSize": {
+          "acres": 0.23,
+          "squareFeet": 10018,
+          "squareMeters": 930.7
+        },
+        "yearBuilt": 1952,
+        "propertyType": "Single Family Residential",
+        "stories": 2,
+        "basement": true,
+        "foundationType": "Full Basement"
+      }
+    },
+    "riskAssessment": {
+      "overall": {
+        "score": 31,
+        "category": "LOW",
+        "trend": "STABLE",
+        "confidence": "HIGH"
+      },
+      "detailedRisks": {
+        "floodRisk": {
+          "score": 28,
+          "category": "LOW",
+          "femaFloodZone": "X",
+          "floodZoneDescription": "Area of minimal flood hazard",
+          "baseFloodElevation": null,
+          "distanceToWater": {
+            "feet": 2100,
+            "meters": 640,
+            "nearestWaterBody": "Cocheco River"
+          },
+          "annualFloodProbability": 0.2,
+          "projectedChange2050": {
+            "scoreIncrease": 8,
+            "newScore": 36,
+            "reason": "Increased precipitation and river flooding"
+          }
+        },
+        "wildfireRisk": {
+          "score": 22,
+          "category": "LOW",
+          "vegetationDensity": "MODERATE",
+          "fuelLoad": "LOW",
+          "historicalFires": 0,
+          "distanceToWildland": {
+            "feet": 3200,
+            "meters": 975
+          },
+          "seasonalRisk": {
+            "spring": "LOW",
+            "summer": "MODERATE",
+            "fall": "LOW",
+            "winter": "VERY_LOW"
+          }
+        },
+        "hurricaneRisk": {
+          "score": 45,
+          "category": "MODERATE",
+          "windZone": "Zone II",
+          "historicalHurricanes": {
+            "category1Plus": 8,
+            "category2Plus": 3,
+            "category3Plus": 1,
+            "lastMajor": "Hurricane Bob (1991)"
+          },
+          "stormSurgeRisk": "MINIMAL",
+          "exposureRating": "MODERATE",
+          "projectedChange2050": {
+            "scoreIncrease": 12,
+            "newScore": 57,
+            "reason": "Increased storm intensity and frequency"
+          }
+        },
+        "earthquakeRisk": {
+          "score": 15,
+          "category": "VERY_LOW",
+          "seismicZone": "Zone 1",
+          "soilType": "FIRM",
+          "foundationRisk": "LOW",
+          "historicalEvents": 2,
+          "lastSignificantQuake": "1940 (Magnitude 5.5, 45 miles away)"
+        },
+        "extremeHeatRisk": {
+          "score": 38,
+          "category": "MODERATE",
+          "currentHeatIndex": {
+            "averageJuly": {
+              "fahrenheit": 82,
+              "celsius": 27.8
+            },
+            "recordHigh": {
+              "fahrenheit": 98,
+              "celsius": 36.7,
+              "date": "July 22, 2011"
+            }
+          },
+          "projectedTemperatures2050": {
+            "averageJulyIncrease": {
+              "fahrenheit": 5.2,
+              "celsius": 2.9
+            },
+            "additionalDaysOver90F": 18,
+            "additionalDaysOver95F": 6
+          },
+          "heatIslandEffect": "MINIMAL",
+          "vulnerabilityFactors": {
+            "age": "HIGH",
+            "treeCoverage": "GOOD",
+            "urbanDensity": "LOW"
+          }
+        },
+        "droughtRisk": {
+          "score": 25,
+          "category": "LOW",
+          "precipitationTrend": "STABLE",
+          "waterSupplySource": "Municipal (Dover)",
+          "waterSecurityRating": "HIGH",
+          "irrigationDependency": "LOW",
+          "historicalDroughts": {
+            "severe": 1,
+            "lastSevere": "2016",
+            "duration": "3 months"
+          }
+        },
+        "coastalErosion": {
+          "score": 5,
+          "category": "VERY_LOW",
+          "distanceToCoast": {
+            "miles": 12.3,
+            "kilometers": 19.8
+          },
+          "applicability": "NOT_APPLICABLE",
+          "note": "Property is inland, not subject to coastal erosion"
+        }
+      }
+    },
+    "insurance": {
+      "floodInsurance": {
+        "required": false,
+        "recommended": false,
+        "estimatedPremium": {
+          "annual": 180,
+          "monthly": 15,
+          "coverage": 250000,
+          "note": "Preferred risk policy available in Zone X"
+        }
+      },
+      "homeownersInsurance": {
+        "estimatedPremium": {
+          "annual": 1250,
+          "monthly": 104,
+          "coverage": 350000
+        },
+        "riskFactors": {
+          "age": "HIGH_RISK",
+          "location": "AVERAGE_RISK",
+          "natural_disasters": "LOW_RISK"
+        }
+      },
+      "windstormInsurance": {
+        "recommended": true,
+        "estimatedPremium": {
+          "annual": 320,
+          "monthly": 27,
+          "coverage": 350000
+        }
+      },
+      "totalEstimatedPremium": {
+        "annual": 1750,
+        "monthly": 146
+      }
+    },
+    "buildingCodes": {
+      "jurisdiction": "Dover, New Hampshire",
+      "adoptedCodes": {
+        "building": "2015 International Building Code",
+        "residential": "2015 International Residential Code",
+        "fire": "2015 International Fire Code"
+      },
+      "windResistance": {
+        "designWindSpeed": {
+          "mph": 110,
+          "kmh": 177
+        },
+        "currentCompliance": "NON_COMPLIANT",
+        "recommendedUpgrades": [
+          "Hurricane straps for roof structure",
+          "Impact-resistant windows",
+          "Reinforced garage door"
+        ]
+      },
+      "floodResistance": {
+        "elevationRequirement": "Not applicable (Zone X)",
+        "foundationRecommendations": "Standard foundation adequate"
+      },
+      "seismicResistance": {
+        "requirement": "Minimal (Seismic Design Category A)",
+        "currentCompliance": "COMPLIANT"
+      }
+    },
+    "mitigation": {
+      "recommendations": [
+        {
+          "type": "STRUCTURAL",
+          "priority": "MEDIUM",
+          "title": "Wind Resistance Upgrades",
+          "description": "Install hurricane straps and reinforced connections",
+          "estimatedCost": {
+            "low": 2500,
+            "high": 4500,
+            "currency": "USD"
+          },
+          "insuranceDiscount": "5-10%",
+          "paybackPeriod": "8-12 years"
+        },
+        {
+          "type": "LANDSCAPING",
+          "priority": "LOW",
+          "title": "Defensible Space",
+          "description": "Maintain 30-foot clearance of combustible vegetation",
+          "estimatedCost": {
+            "low": 300,
+            "high": 800,
+            "currency": "USD"
+          },
+          "insuranceDiscount": "2-5%",
+          "paybackPeriod": "5-8 years"
+        },
+        {
+          "type": "EMERGENCY_PREP",
+          "priority": "HIGH",
+          "title": "Emergency Kit and Plan",
+          "description": "72-hour emergency kit and evacuation plan",
+          "estimatedCost": {
+            "low": 150,
+            "high": 400,
+            "currency": "USD"
+          },
+          "insuranceDiscount": "0%",
+          "paybackPeriod": "Immediate safety benefit"
+        }
+      ],
+      "priorityActions": [
+        "Create emergency evacuation plan",
+        "Install battery backup sump pump",
+        "Upgrade electrical panel if needed"
+      ]
+    },
+    "projections": {
+      "timeframe": "2024-2054",
+      "overallRiskTrend": "MODERATE_INCREASE",
+      "keyChanges": {
+        "temperature": {
+          "averageIncrease": {
+            "fahrenheit": 4.8,
+            "celsius": 2.7
+          },
+          "extremeHeatDays": "+15 days over 90°F annually"
+        },
+        "precipitation": {
+          "annualChange": "+8%",
+          "winterIncrease": "+15%",
+          "summerDecrease": "-5%",
+          "extremeEvents": "+25% intensity"
+        },
+        "riskScoreProjections": {
+          "2030": 35,
+          "2040": 42,
+          "2050": 48
+        }
+      }
+    },
+    "marketImpact": {
+      "propertyValue": {
+        "currentRiskDiscount": "0-2%",
+        "projected2050Discount": "3-7%",
+        "marketTrend": "STABLE_WITH_AWARENESS"
+      },
+      "insurability": {
+        "currentStatus": "READILY_AVAILABLE",
+        "futureOutlook": "STABLE",
+        "riskFactors": "Age of home primary concern"
+      },
+      "saleability": {
+        "currentMarketability": "HIGH",
+        "projectedMarketability": "MODERATE_HIGH",
+        "disclosureRequirements": "Standard New Hampshire requirements"
+      }
+    },
+    "localResources": {
+      "emergencyManagement": {
+        "agency": "Dover Fire Department / Emergency Management",
+        "contact": "(603) 516-6336",
+        "website": "https://www.dover.nh.gov/government/city-operations/fire/"
+      },
+      "floodPlainManager": {
+        "agency": "Dover Planning Department",
+        "contact": "(603) 516-6008"
+      },
+      "utilities": {
+        "electric": "Eversource Energy",
+        "gas": "Liberty Utilities",
+        "water": "Dover Water Department",
+        "emergencyContacts": {
+          "electric": "(800) 662-7764",
+          "gas": "(855) 386-4325",
+          "water": "(603) 516-6450"
+        }
+      }
+    },
+    "dataSources": {
+      "fema": {
+        "floodMaps": "FIRM Panel 33017C0305F (Effective 2005-07-18)",
+        "nationalRiskIndex": "Strafford County, NH"
+      },
+      "noaa": {
+        "climateData": "Durham, NH Weather Station (COOP:272174)",
+        "stormEvents": "NOAA Storm Events Database"
+      },
+      "usgs": {
+        "earthquake": "National Seismic Hazard Maps 2018",
+        "landslide": "Landslide Hazards Program"
+      },
+      "state": {
+        "nhHsem": "New Hampshire Homeland Security and Emergency Management",
+        "forestFire": "NH Division of Forests & Lands"
+      }
+    }
+  },
+  "meta": {
+    "timestamp": "2025-01-15T19:30:00Z",
+    "processingTime": 2.3,
+    "dataSourcesQueried": 8,
+    "confidenceScore": 0.91,
+    "version": "1.0.0",
+    "riskModelVersion": "2024.1",
+    "lastUpdated": "2025-01-15T19:30:00Z"
+  },
+  "humanReadable": {
+    "summary": "This Dover, NH property shows LOW overall climate risk (31/100) with the primary concerns being moderate hurricane risk and emerging heat risks. The property benefits from its inland location, minimal flood risk, and low wildfire exposure. Key recommendations include wind resistance upgrades and emergency preparedness planning.",
+    "topRisks": [
+      "Hurricane winds (45/100) - Moderate risk from coastal storms",
+      "Extreme heat (38/100) - Increasing summer temperatures",
+      "Flood risk (28/100) - Low but monitoring river flooding trends"
+    ],
+    "keyStrengths": [
+      "Zone X flood zone with minimal flood risk",
+      "Inland location protected from coastal hazards", 
+      "Low wildfire risk due to limited vegetation",
+      "Stable geological conditions"
+    ],
+    "recommendedActions": [
+      "Install hurricane straps and wind-resistant upgrades",
+      "Create 72-hour emergency preparedness kit",
+      "Monitor climate projections for increasing heat and storms",
+      "Consider optional flood insurance for peace of mind"
+    ]
+  }
+}

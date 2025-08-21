@@ -1,0 +1,17 @@
+{
+    "Changes": [
+        {
+            "Action": "CREATE",
+            "ResourceRecordSet": {
+                "Name": "test.seawater.io",
+                "Type": "CNAME",
+                "TTL": 300,
+                "ResourceRecords": [
+                    {
+                        "Value": "d39f7usimmn1rn.cloudfront.net"
+                    }
+                ]
+            }
+        }
+    ]
+}

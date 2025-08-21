@@ -1,7 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { RiskLevel, ComponentSize } from '@types';
-import { getRiskLevelColor } from '@utils/risk';
+import { RiskLevel, ComponentSize } from '../../types';
+import { getRiskLevelColor } from '../../utils/risk';
 
 interface RiskMeterProps extends ComponentSize {
   value: number;
@@ -142,7 +142,7 @@ export const RiskMeter: React.FC<RiskMeterProps> = memo(({
             
             {/* Drop shadow filter */}
             <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
-              <dropShadow dx="2" dy="2" stdDeviation="2" floodColor="rgba(0,0,0,0.1)" />
+              <feDropShadow dx="2" dy="2" stdDeviation="2" floodColor="rgba(0,0,0,0.1)" />
             </filter>
           </defs>
           

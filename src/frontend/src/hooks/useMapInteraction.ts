@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { LatLng } from '@types';
+import { LatLng } from '../types';
 
 interface MapViewState {
   latitude: number;

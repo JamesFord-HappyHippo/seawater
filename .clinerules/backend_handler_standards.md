@@ -1,5 +1,50 @@
 # Backend Handler Standards
 
+## Method-Specific Handler Architecture (August 2025) ✅
+
+### Current Pattern: Single HTTP Method Per Handler
+**Status**: Ready for deployment to Seawater climate platform
+**Achievement**: Proven pattern with 63+ method-specific handlers in Tim-Combo
+
+### HTTP Method Parameter Conventions
+**Strict adherence required for consistent climate API behavior:**
+
+```javascript
+// GET/DELETE Methods - Use queryStringParameters for climate queries
+async function getPropertyRiskHandler({ queryStringParameters: queryParams = {}, requestContext }) {
+    // ✅ CORRECT: Access query parameters for climate data
+    const address = queryParams.address;
+    const riskSources = queryParams.sources;
+    const coordinates = queryParams.coordinates;
+}
+
+// POST/PUT Methods - Use body (requestBody) for climate assessments
+async function createRiskAssessmentHandler({ body: requestBody = {}, requestContext }) {
+    // ✅ CORRECT: Access request body for climate submissions
+    const propertyData = requestBody.property_data;
+    const riskParameters = requestBody.risk_parameters;
+}
+```
+
+### Method-Specific Naming Convention
+**Handler files must include HTTP method suffix for climate APIs:**
+
+```javascript
+// ✅ CORRECT Method-Specific Naming for Climate Platform
+propertyRiskGet.js           // GET /climate/property-risk
+riskAssessmentCreate.js      // POST /climate/risk-assessment
+bulkAnalysisGet.js          // GET /climate/bulk-analysis
+professionalReportPost.js   // POST /climate/professional-report
+
+// Climate-specific geographic handlers
+geographicRiskGet.js        // GET /climate/geographic-risk
+boundaryDataGet.js          // GET /climate/boundary-data
+
+// ❌ INCORRECT Multi-Method Handlers (deprecated)
+propertyRisk.js             // Handles multiple HTTP methods - DO NOT USE
+riskAssessment.js          // Handles GET/POST/PUT - DO NOT USE
+```
+
 ## Import Path Consistency
 
 ### Helper Imports

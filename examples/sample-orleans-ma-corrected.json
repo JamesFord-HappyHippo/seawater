@@ -1,0 +1,234 @@
+{
+  "success": true,
+  "data": {
+    "property": {
+      "address": "48 Tonset Rd, Orleans, MA 02653",
+      "normalizedAddress": "48 tonset rd orleans ma 02653",
+      "location": {
+        "latitude": 41.7901,
+        "longitude": -69.9892,
+        "elevation": {
+          "feet": 12,
+          "meters": 3.7
+        },
+        "county": "Barnstable County",
+        "state": "Massachusetts",
+        "zipCode": "02653",
+        "timezone": "America/New_York",
+        "waterBodies": {
+          "primary": "Town Cove",
+          "secondary": "Cape Cod Bay (via Town Cove outlet)",
+          "tertiary": "Atlantic Ocean",
+          "distanceToWater": {
+            "feet": 150,
+            "meters": 46,
+            "description": "Direct frontage on Town Cove, tidal inlet"
+          }
+        }
+      }
+    },
+    "riskAssessment": {
+      "overall": {
+        "score": 72,
+        "category": "HIGH",
+        "trend": "INCREASING",
+        "confidence": 0.89,
+        "uncertaintyRange": {
+          "low": 68,
+          "high": 76
+        },
+        "lastAssessed": "2025-01-15T20:30:00Z"
+      },
+      "detailedRisks": {
+        "floodRisk": {
+          "score": 75,
+          "category": "HIGH",
+          "confidence": 0.92,
+          "sources": [
+            {
+              "authority": "FEMA",
+              "source": "Flood Insurance Rate Map (FIRM)",
+              "panel": "25001C0420F",
+              "effectiveDate": "2014-07-16",
+              "floodZone": "AE",
+              "value": "1% annual chance (100-year flood)",
+              "baseFloodElevation": "9 feet NAVD88",
+              "url": "https://msc.fema.gov/portal/search",
+              "confidence": 0.95,
+              "notes": "Zone AE indicates 1% annual chance flooding with established BFE"
+            },
+            {
+              "authority": "NOAA",
+              "source": "Storm Surge Height Analysis",
+              "value": "Category 2 hurricane: 6-8 feet storm surge",
+              "url": "https://coast.noaa.gov/hurricanes/",
+              "confidence": 0.88,
+              "notes": "Town Cove amplifies storm surge due to funnel effect"
+            },
+            {
+              "authority": "USGS",
+              "source": "High Tide Flooding Analysis",
+              "value": "12+ sunny day floods per year by 2050",
+              "url": "https://water.usgs.gov/osw/flood/",
+              "confidence": 0.82
+            },
+            {
+              "authority": "Orleans Planning",
+              "source": "Local Flood Ordinance Map",
+              "value": "Coastal High Hazard Area designation",
+              "confidence": 0.90,
+              "notes": "Town Cove classified as velocity zone equivalent"
+            }
+          ],
+          "riskFactors": {
+            "tidalInfluence": "HIGH - Town Cove experiences 8-10 foot tidal range",
+            "stormSurgeAmplification": "HIGH - Cove shape amplifies surge heights",
+            "seaLevelRise": "ACCELERATING - 0.13 inches/year locally",
+            "floodHistory": "Regular - 3 significant floods in past 10 years"
+          },
+          "methodology": "Composite score from FEMA BFE analysis, NOAA storm surge modeling, USGS tide gauge data, and local flood history. Score reflects 1% annual probability base flood plus storm surge and sea level rise projections.",
+          "projectedChange2050": {
+            "scoreIncrease": 12,
+            "newScore": 87,
+            "reasoning": "Sea level rise + increased storm intensity + Town Cove amplification effects"
+          }
+        },
+        "hurricaneRisk": {
+          "score": 81,
+          "category": "HIGH",
+          "confidence": 0.91,
+          "sources": [
+            {
+              "authority": "NOAA Hurricane Database (HURDAT2)",
+              "source": "Historical Hurricane Tracks",
+              "value": "18 named storms within 50 miles since 1950",
+              "url": "https://www.nhc.noaa.gov/data/hurdat/",
+              "confidence": 0.98,
+              "majorEvents": [
+                "Hurricane Bob (1991) - Category 2 at landfall",
+                "Hurricane Sandy (2012) - Tropical Storm force",
+                "Hurricane Isaias (2020) - Tropical Storm force"
+              ]
+            },
+            {
+              "authority": "FEMA Wind Zone Maps",
+              "source": "Design Wind Speed Analysis",
+              "value": "120 mph 3-second gust (Risk Category II)",
+              "confidence": 0.95
+            }
+          ],
+          "riskFactors": {
+            "exposure": "VERY_HIGH - Direct coastal exposure",
+            "windSpeedHistory": "Sustained 75+ mph winds every 8-12 years",
+            "stormSurgeRisk": "EXTREME - Town Cove funnel effect",
+            "evacuationComplexity": "HIGH - Single access road (Route 28)"
+          },
+          "methodology": "Analysis of historical hurricane tracks, wind speed records, storm surge modeling specific to Town Cove geography, and evacuation route assessment."
+        },
+        "coastalErosion": {
+          "score": 82,
+          "category": "VERY_HIGH",
+          "confidence": 0.85,
+          "sources": [
+            {
+              "authority": "USGS Coastal Change Hazards",
+              "source": "Shoreline Change Analysis",
+              "value": "2-3 feet per year average erosion rate",
+              "url": "https://marine.usgs.gov/coastalchangehazards/",
+              "confidence": 0.87,
+              "timeframe": "1994-2018 analysis period"
+            },
+            {
+              "authority": "Cape Cod Commission",
+              "source": "Coastal Erosion Study",
+              "value": "Town Cove classified as 'severe erosion area'",
+              "confidence": 0.83,
+              "notes": "Both natural erosion and boat wake impacts"
+            }
+          ],
+          "riskFactors": {
+            "naturalErosion": "HIGH - Sandy soils, wave action",
+            "boatWakeErosion": "MODERATE - Recreational boat traffic",
+            "seaLevelRiseAcceleration": "HIGH - Increases erosion rates",
+            "protectionMeasures": "LIMITED - Natural shoreline"
+          }
+        }
+      }
+    },
+    "dataQuality": {
+      "overallConfidence": 0.89,
+      "sourceValidation": {
+        "femaDataAge": "11 years (2014 maps)",
+        "noaaDataFreshness": "Current (updated monthly)",
+        "localDataAvailability": "Good - Orleans maintains current records",
+        "conflictResolution": "FEMA and local data aligned on flood zone designation"
+      },
+      "uncertaintyFactors": [
+        "Climate change acceleration may exceed current projections",
+        "Town Cove specific modeling limited vs. open ocean",
+        "Local bathymetry changes affect surge modeling",
+        "Future development impacts on drainage"
+      ],
+      "qualityIndicators": {
+        "sourceAuthority": "HIGH - Federal and local agencies",
+        "dataRecency": "MIXED - FEMA data older, NOAA current",
+        "localValidation": "VERIFIED - Cross-checked with Orleans Planning",
+        "peerReview": "PENDING - Recommend professional engineer review"
+      }
+    },
+    "userVerification": {
+      "sourceLinks": {
+        "femaMaps": "https://msc.fema.gov/portal/search#searchresultsanchor",
+        "noaaStormSurge": "https://coast.noaa.gov/hurricanes/",
+        "orleansPanning": "https://www.town.orleans.ma.us/planning-board",
+        "usgsErosion": "https://marine.usgs.gov/coastalchangehazards/"
+      },
+      "disputeProcess": {
+        "email": "feedback@seawater.io",
+        "phone": "1-800-SEAWATER",
+        "process": "Submit evidence (FEMA letter, survey, etc.) for professional review"
+      },
+      "lastValidated": "2025-01-15T20:30:00Z",
+      "validatedBy": "Seawater Risk Assessment Team"
+    },
+    "attribution": {
+      "primarySources": [
+        "FEMA Flood Insurance Rate Maps (FIRM)",
+        "NOAA National Hurricane Center Historical Database",
+        "USGS Coastal Change Hazards Portal",
+        "Orleans, MA Planning Department"
+      ],
+      "methodology": "Multi-source risk assessment combining federal hazard data with local knowledge and historical records. Scores represent relative risk on 0-100 scale based on probability, consequence, and vulnerability analysis.",
+      "disclaimer": "Risk assessments are estimates based on available data and models. Actual flood, wind, and erosion impacts may vary. Property owners should verify current FEMA maps, local ordinances, and insurance requirements with appropriate authorities.",
+      "lastUpdated": "2025-01-15T20:30:00Z",
+      "nextReview": "2025-07-15T00:00:00Z"
+    }
+  },
+  "meta": {
+    "timestamp": "2025-01-15T20:30:00Z",
+    "processingTime": 3.2,
+    "dataSourcesQueried": 12,
+    "confidenceScore": 0.89,
+    "version": "1.1.0",
+    "riskModelVersion": "2024.2",
+    "qualityFlags": [
+      "FEMA_DATA_OLDER_THAN_5_YEARS",
+      "LOCAL_VALIDATION_COMPLETE",
+      "MULTI_SOURCE_VERIFIED"
+    ]
+  },
+  "recommendations": {
+    "dataVerification": [
+      "Verify current flood zone with Orleans Building Department",
+      "Check for any recent FEMA map updates or Letters of Map Amendment",
+      "Review property-specific elevation certificate if available",
+      "Consult with local flood plain manager for latest ordinances"
+    ],
+    "professionalReview": [
+      "Consider hiring licensed surveyor for exact elevation analysis",
+      "Consult with coastal engineer for property-specific risk assessment",
+      "Review insurance policy with agent familiar with Town Cove area",
+      "Engage Orleans Emergency Management for evacuation planning"
+    ]
+  }
+}

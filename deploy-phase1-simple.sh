@@ -101,13 +101,37 @@ echo -e "${GREEN}✅ Using subnets: $SUBNET1, $SUBNET2${NC}"
 sed -i.bak "s/subnet-12345678/$SUBNET1/g" IAC/database-simple.yaml
 sed -i.bak "s/subnet-87654321/$SUBNET2/g" IAC/database-simple.yaml
 
-# Step 2: Create Basic Lambda Handlers
-echo -e "${YELLOW}📦 Step 2: Creating basic Lambda handlers...${NC}"
+# Step 2: Build Lambda Functions
+echo -e "${YELLOW}📦 Step 2: Building Lambda functions with dependencies...${NC}"
 
+# Navigate to backend directory and build
+cd src/backend
+
+# Install dependencies if not already done
+if [ ! -d "node_modules" ]; then
+    echo "Installing backend dependencies..."
+    npm install
+fi
+
+# Build bundled Lambda functions
+echo "Building Lambda functions..."
+npm run build
+
+cd ../../
+
+echo -e "${GREEN}✅ Lambda functions built and bundled${NC}"
+
+# Verify bundled files exist
+if [ ! -f "src/backend/dist/healthCheck.js" ]; then
+    echo -e "${RED}❌ Build failed - healthCheck.js not found${NC}"
+    exit 1
+fi
+
+# Create placeholder for old deployment structure compatibility
 mkdir -p src/backend/handlers
 mkdir -p src/backend/dist
 
-# Create health check handler (Node.js 22 compatible)
+# Legacy compatibility (can be removed in future)
 cat > src/backend/handlers/healthCheck.js << 'EOF'
 const { Client } = require('pg');
 
@@ -289,26 +313,8 @@ exports.handler = async (event) => {
 };
 EOF
 
-# Package Lambda functions
-echo -e "${YELLOW}📦 Packaging Lambda functions...${NC}"
-cd src/backend/handlers
-
-# Install pg dependency
-npm init -y
-npm install pg
-
-# Package each handler
-for handler in *.js; do
-    if [ -f "$handler" ]; then
-        echo "Packaging $handler..."
-        zip "${handler%.js}.zip" "$handler" package.json node_modules/ -r
-        mv "${handler%.js}.zip" "../dist/"
-    fi
-done
-
-cd ../../../
-
-echo -e "${GREEN}✅ Lambda functions packaged${NC}"
+# No packaging needed - files are already bundled
+echo -e "${GREEN}✅ Lambda functions are bundled and ready for deployment${NC}"
 
 # Step 3: Deploy Database
 echo -e "${YELLOW}🗄️  Step 3: Deploying Database...${NC}"
@@ -380,16 +386,21 @@ else
     echo -e "${YELLOW}⚠️  PostgreSQL client not found - run schema manually later${NC}"
 fi
 
-# Step 5: Create S3 bucket and upload Lambda packages
-echo -e "${YELLOW}📦 Step 5: Creating S3 bucket and uploading functions...${NC}"
+# Step 5: Verify bundled Lambda functions
+echo -e "${YELLOW}📦 Step 5: Verifying bundled Lambda functions...${NC}"
 
-aws s3 mb s3://seawater-dev-lambda --region $REGION 2>/dev/null || echo "Bucket already exists"
+echo "Bundled Lambda functions:"
+ls -la src/backend/dist/
+echo ""
 
-# Upload Lambda packages
-aws s3 cp src/backend/dist/healthCheck.zip s3://seawater-dev-lambda/ --region $REGION
-aws s3 cp src/backend/dist/getPropertyRisk.zip s3://seawater-dev-lambda/ --region $REGION
+for func in src/backend/dist/*.js; do
+    if [ -f "$func" ]; then
+        size=$(du -h "$func" | cut -f1)
+        echo "✅ $(basename "$func") - $size"
+    fi
+done
 
-echo -e "${GREEN}✅ Lambda packages uploaded${NC}"
+echo -e "${GREEN}✅ All Lambda functions are bundled and ready${NC}"
 
 # Step 6: Deploy API Gateway and Lambdas
 echo -e "${YELLOW}🚀 Step 6: Deploying API Gateway and Lambda functions...${NC}"

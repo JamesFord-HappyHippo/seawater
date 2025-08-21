@@ -53,7 +53,10 @@ export interface Property {
 
 // Risk Assessment Types
 export type RiskLevel = 'LOW' | 'MODERATE' | 'HIGH' | 'VERY_HIGH' | 'EXTREME';
-export type HazardType = 'flood' | 'wildfire' | 'hurricane' | 'tornado' | 'earthquake' | 'heat' | 'drought' | 'hail';
+export type HazardType = 
+  | 'flood' | 'wildfire' | 'hurricane' | 'tornado' | 'earthquake' | 'heat' | 'drought' | 'hail'
+  | 'avalanche' | 'coastal_flooding' | 'cold_wave' | 'ice_storm' | 'landslide' | 'lightning'
+  | 'riverine_flooding' | 'strong_wind' | 'tsunami' | 'volcanic_activity' | 'winter_weather';
 
 export interface DataSource {
   name: string;
@@ -77,6 +80,42 @@ export interface HazardAssessment {
   projections_30yr?: number;
   description?: string;
   recommendations?: string[];
+  // Enhanced FEMA-specific fields
+  rating?: string;
+  expected_annual_loss?: number;
+  expected_annual_loss_rating?: string;
+  risk_value?: number;
+  percentile?: number;
+  data_available?: boolean;
+  confidence?: number;
+  // NOAA Weather Enhancement
+  weather_adjusted_score?: number;
+  weather_adjustment_factors?: {
+    historical_frequency?: number;
+    seasonal_factor?: number;
+    climate_trend?: number;
+    current_conditions?: number;
+  };
+}
+
+// NOAA Weather Context Summary for Risk Assessment Integration
+export interface NOAAWeatherContextSummary {
+  has_weather_data: boolean;
+  active_alerts_count: number;
+  historical_events_count: number;
+  climate_risk_factors: {
+    temperature_trend: 'increasing' | 'decreasing' | 'stable';
+    precipitation_trend: 'increasing' | 'decreasing' | 'stable';
+    extreme_weather_frequency: 'increasing' | 'decreasing' | 'stable';
+  };
+  seasonal_risk_elevation: {
+    current_season: 'spring' | 'summer' | 'fall' | 'winter';
+    elevated_hazards: HazardType[];
+    risk_multiplier: number;
+  };
+  weather_confidence_score: number;
+  last_weather_update: string;
+  significant_weather_insights: string[];
 }
 
 export interface RiskAssessment {
@@ -87,6 +126,7 @@ export interface RiskAssessment {
   confidence_score: number;
   data_completeness: number;
   hazards: {
+    // Original 8 hazards
     flood?: HazardAssessment;
     wildfire?: HazardAssessment;
     hurricane?: HazardAssessment;
@@ -95,10 +135,149 @@ export interface RiskAssessment {
     heat?: HazardAssessment;
     drought?: HazardAssessment;
     hail?: HazardAssessment;
+    // Additional 11 FEMA hazards
+    avalanche?: HazardAssessment;
+    coastal_flooding?: HazardAssessment;
+    cold_wave?: HazardAssessment;
+    ice_storm?: HazardAssessment;
+    landslide?: HazardAssessment;
+    lightning?: HazardAssessment;
+    riverine_flooding?: HazardAssessment;
+    strong_wind?: HazardAssessment;
+    tsunami?: HazardAssessment;
+    volcanic_activity?: HazardAssessment;
+    winter_weather?: HazardAssessment;
   };
-  social_vulnerability?: number;
-  community_resilience?: number;
+  // Enhanced FEMA data
+  social_vulnerability?: SocialVulnerabilityIndex;
+  community_resilience?: CommunityResilienceIndex;
   building_codes?: BuildingCodeInfo;
+  // New comprehensive FEMA features
+  risk_prioritization?: RiskPrioritization;
+  seasonal_variations?: SeasonalRiskAnalysis;
+  risk_interactions?: RiskInteractionAnalysis;
+  actionable_insights?: ActionableInsights;
+  // NOAA Weather Context Integration
+  weather_context?: NOAAWeatherContextSummary;
+}
+
+// Enhanced FEMA-specific interfaces
+export interface SocialVulnerabilityIndex {
+  index: number;
+  rating: string;
+  percentile: number;
+  level: string;
+  description: string;
+  factors: {
+    socioeconomic?: number;
+    household_composition?: number;
+    minority_language?: number;
+    housing_transportation?: number;
+  };
+  data_available: boolean;
+}
+
+export interface CommunityResilienceIndex {
+  index: number;
+  rating: string;
+  percentile: number;
+  level: string;
+  description: string;
+  factors: {
+    social_institutions?: number;
+    economic_resilience?: number;
+    infrastructure?: number;
+    community_capital?: number;
+  };
+  data_available: boolean;
+}
+
+export interface RiskPrioritization {
+  high_priority: Array<{
+    hazard: HazardType;
+    score: number;
+    level: RiskLevel;
+    confidence: number;
+    priority_score: number;
+  }>;
+  medium_priority: Array<{
+    hazard: HazardType;
+    score: number;
+    level: RiskLevel;
+    confidence: number;
+    priority_score: number;
+  }>;
+  low_priority: Array<{
+    hazard: HazardType;
+    score: number;
+    level: RiskLevel;
+    confidence: number;
+    priority_score: number;
+  }>;
+  top_3_risks: Array<{
+    hazard: HazardType;
+    score: number;
+    level: RiskLevel;
+    confidence: number;
+    priority_score: number;
+  }>;
+}
+
+export interface SeasonalRiskAnalysis {
+  spring: {
+    hazards: Array<{
+      hazard: HazardType;
+      score: number;
+      level: RiskLevel;
+    }>;
+    average_risk: number;
+    high_risk_count: number;
+  };
+  summer: {
+    hazards: Array<{
+      hazard: HazardType;
+      score: number;
+      level: RiskLevel;
+    }>;
+    average_risk: number;
+    high_risk_count: number;
+  };
+  fall: {
+    hazards: Array<{
+      hazard: HazardType;
+      score: number;
+      level: RiskLevel;
+    }>;
+    average_risk: number;
+    high_risk_count: number;
+  };
+  winter: {
+    hazards: Array<{
+      hazard: HazardType;
+      score: number;
+      level: RiskLevel;
+    }>;
+    average_risk: number;
+    high_risk_count: number;
+  };
+}
+
+export interface RiskInteractionAnalysis {
+  potential_interactions: Array<{
+    primary: HazardType;
+    secondary: HazardType;
+    relationship: 'amplifying' | 'triggering' | 'compound' | 'concurrent' | 'reinforcing';
+    description: string;
+  }>;
+  compound_risk_score: number;
+  interaction_count: number;
+}
+
+export interface ActionableInsights {
+  immediate_actions: string[];
+  preparedness_recommendations: string[];
+  mitigation_strategies: string[];
+  monitoring_priorities: string[];
 }
 
 export interface PropertyRiskData {
@@ -187,6 +366,9 @@ export interface UserPreferences {
   units: 'imperial' | 'metric';
   theme: 'light' | 'dark' | 'auto';
   dashboard_layout?: string;
+  intended_use?: 'personal' | 'business' | 'research';
+  referral_source?: string;
+  marketing_emails?: boolean;
 }
 
 export interface APIUsage {
@@ -198,33 +380,7 @@ export interface APIUsage {
   cost_current_period: number;
 }
 
-// API Response Types
-export interface APIResponse<T> {
-  success: boolean;
-  data: T;
-  meta?: {
-    request_id: string;
-    timestamp: string;
-    processing_time_ms: number;
-    cache_status: 'hit' | 'miss' | 'stale';
-    cost_credits?: number;
-    data_sources_used?: string[];
-  };
-}
-
-export interface APIError {
-  success: false;
-  error: {
-    code: string;
-    message: string;
-    details?: Record<string, any>;
-    suggestion?: string;
-  };
-  meta?: {
-    request_id: string;
-    timestamp: string;
-  };
-}
+// API Response Types are now defined in ./api.ts to avoid circular imports
 
 // Comparison Types
 export interface PropertyComparison {
@@ -377,3 +533,4 @@ export interface RiskScoreEvent {
 export * from './api';
 export * from './forms';
 export * from './charts';
+export * from './noaa';

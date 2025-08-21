@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { GeocodedAddress } from '@types';
+import { GeocodedAddress } from '../types';
 
 interface UseGeocodingReturn {
   geocodeAddress: (address: string) => Promise<GeocodedAddress[] | null>;

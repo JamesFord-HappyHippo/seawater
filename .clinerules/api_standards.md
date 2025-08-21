@@ -1,5 +1,43 @@
 # API Standards and Response Formats
 
+## Method-Specific Handler Integration (August 2025) ✅
+
+### HTTP Method Parameter Patterns
+**CRITICAL**: Method-specific handlers require consistent parameter access patterns
+
+**GET/DELETE Requests**: Use `queryStringParameters`
+```typescript
+// Handler signature for GET/DELETE  
+async function getPropertyRiskHandler({ queryStringParameters: queryParams = {}, requestContext }) {
+    // ✅ CORRECT: Access query parameters for climate data queries
+    const address = queryParams.address;
+    const riskSources = queryParams.sources;
+    const coordinates = queryParams.coordinates;
+}
+```
+
+**POST/PUT Requests**: Use `body` parameter
+```typescript
+// Handler signature for POST/PUT
+async function createRiskAssessmentHandler({ body: requestBody = {}, requestContext }) {
+    // ✅ CORRECT: Access request body for climate risk submissions
+    const propertyData = requestBody.property_data;
+    const riskParameters = requestBody.risk_parameters;
+    const analysisConfig = requestBody.analysis_config;
+}
+```
+
+### Frontend API Client Pattern
+```typescript
+// Climate-specific API calls
+const riskResult = await Make_Authorized_API_Call<ClimateRiskData>(
+  API_ENDPOINTS.CLIMATE.PROPERTY_RISK,
+  'GET',
+  undefined,
+  { params: { address: propertyAddress, sources: 'fema,firststreet' } }
+);
+```
+
 ## Core API Response Format
 
 All API responses must follow this exact format:

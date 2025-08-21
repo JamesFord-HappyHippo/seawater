@@ -258,9 +258,9 @@ export interface ValidationRule<T = any> {
   custom?: (value: T) => string | undefined;
 }
 
-export interface FormValidation<T extends Record<string, any>> {
+export type FormValidation<T extends Record<string, any>> = {
   [K in keyof T]?: ValidationRule<T[K]> | ValidationRule<T[K]>[];
-}
+};
 
 // Form Hook Types
 export interface UseFormOptions<T extends Record<string, any>> {

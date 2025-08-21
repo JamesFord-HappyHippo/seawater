@@ -1,0 +1,23 @@
+{
+  "name": "seawater-jwt-authorizer",
+  "version": "1.0.0",
+  "description": "Seawater JWT authorizer function with trial and subscription validation",
+  "main": "index.js",
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0",
+    "pg": "^8.11.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "authorizer",
+    "jwt",
+    "cognito",
+    "trial",
+    "subscription"
+  ]
+}

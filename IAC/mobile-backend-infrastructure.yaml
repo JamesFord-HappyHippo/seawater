@@ -1,0 +1,1194 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Seawater Climate Risk Platform - Mobile Backend Infrastructure
+  Optimized for Flutter/Expo mobile apps with climate data processing,
+  user authentication, and real-time location services.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, staging, production]
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: seawater
+    Description: Project name for resource naming
+
+  MobileDomainName:
+    Type: String
+    Default: ''
+    Description: Custom domain for mobile API (e.g., mobile-api.seawater.io)
+
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: SSL certificate ARN for custom domain
+
+  DatabaseUsername:
+    Type: String
+    Default: seawater_mobile_admin
+    NoEcho: true
+    Description: PostgreSQL master username
+
+  DatabasePassword:
+    Type: String
+    NoEcho: true
+    MinLength: 12
+    MaxLength: 32
+    Description: PostgreSQL master password
+
+  # Mobile-specific parameters
+  MobileAppBundleId:
+    Type: String
+    Default: com.seawater.climate-platform
+    Description: Mobile app bundle identifier
+
+  PushNotificationConfig:
+    Type: String
+    Default: ''
+    Description: SNS platform application ARN for push notifications
+
+  MapBoxAccessToken:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: MapBox access token for mobile mapping
+
+  ClimateAPIKeys:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: JSON string of climate API keys (NOAA, USGS, etc.)
+
+  # Performance and scaling parameters
+  LambdaMemorySize:
+    Type: Number
+    Default: 1024
+    AllowedValues: [512, 768, 1024, 1536, 2048, 3008]
+    Description: Lambda memory allocation for mobile APIs
+
+  DatabaseInstanceClass:
+    Type: String
+    Default: db.t3.small
+    AllowedValues: 
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.r6g.large
+      - db.r6g.xlarge
+    Description: RDS instance class optimized for climate data
+
+  RedisNodeType:
+    Type: String
+    Default: cache.t4g.small
+    AllowedValues:
+      - cache.t4g.micro
+      - cache.t4g.small
+      - cache.t4g.medium
+      - cache.r7g.large
+    Description: ElastiCache node type for mobile caching
+
+  MaxMobileConcurrency:
+    Type: Number
+    Default: 50
+    Description: Maximum concurrent Lambda executions for mobile APIs
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
+  IsStaging: !Equals [!Ref Environment, 'staging']
+  HasCustomDomain: !Not [!Equals [!Ref MobileDomainName, '']]
+  EnableAdvancedFeatures: !Or [!Condition IsProduction, !Condition IsStaging]
+  HasPushNotifications: !Not [!Equals [!Ref PushNotificationConfig, '']]
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Architecture: arm64  # Cost optimization for mobile workloads
+    MemorySize: !Ref LambdaMemorySize
+    Timeout: 30
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        PROJECT_NAME: !Ref ProjectName
+        DATABASE_HOST: !GetAtt MobileDatabase.Endpoint.Address
+        DATABASE_PORT: !GetAtt MobileDatabase.Endpoint.Port
+        DATABASE_NAME: seawater_mobile
+        REDIS_ENDPOINT: !GetAtt MobileRedisCluster.PrimaryEndpoint.Address
+        REDIS_PORT: !GetAtt MobileRedisCluster.PrimaryEndpoint.Port
+        MAPBOX_ACCESS_TOKEN: !Ref MapBoxAccessToken
+        CLIMATE_API_KEYS: !Ref ClimateAPIKeys
+        MOBILE_BUNDLE_ID: !Ref MobileAppBundleId
+        LOG_LEVEL: !If [IsProduction, 'warn', 'debug']
+        CORS_ORIGIN: !If [IsProduction, 'app://seawater-climate-platform', '*']
+    Tracing: Active
+    ReservedConcurrencyLimit: !Ref MaxMobileConcurrency
+    VpcConfig:
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+
+Resources:
+  # ==================== VPC INFRASTRUCTURE ====================
+  MobileVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub 
+        - '10.${EnvOctet}.0.0/16'
+        - EnvOctet: !If 
+          - IsProduction
+          - '2'
+          - !If 
+            - IsStaging
+            - '1'
+            - '0'
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-mobile-vpc'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: mobile-backend
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-mobile-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MobileVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnets for NAT Gateways and Load Balancers
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MobileVPC
+      CidrBlock: !Sub
+        - '10.${EnvOctet}.1.0/24'
+        - EnvOctet: !If [IsProduction, '2', !If [IsStaging, '1', '0']]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-a'
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MobileVPC
+      CidrBlock: !Sub
+        - '10.${EnvOctet}.2.0/24'
+        - EnvOctet: !If [IsProduction, '2', !If [IsStaging, '1', '0']]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-public-b'
+
+  # Private Subnets for Lambda Functions
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MobileVPC
+      CidrBlock: !Sub
+        - '10.${EnvOctet}.11.0/24'
+        - EnvOctet: !If [IsProduction, '2', !If [IsStaging, '1', '0']]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-lambda-a'
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MobileVPC
+      CidrBlock: !Sub
+        - '10.${EnvOctet}.12.0/24'
+        - EnvOctet: !If [IsProduction, '2', !If [IsStaging, '1', '0']]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-lambda-b'
+
+  # Database Subnets
+  DatabaseSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MobileVPC
+      CidrBlock: !Sub
+        - '10.${EnvOctet}.21.0/24'
+        - EnvOctet: !If [IsProduction, '2', !If [IsStaging, '1', '0']]
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-a'
+
+  DatabaseSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MobileVPC
+      CidrBlock: !Sub
+        - '10.${EnvOctet}.22.0/24'
+        - EnvOctet: !If [IsProduction, '2', !If [IsStaging, '1', '0']]
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-b'
+
+  # NAT Gateways for private subnet internet access
+  NatGatewayAEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+
+  NatGatewayA:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayAEIP.AllocationId
+      SubnetId: !Ref PublicSubnetA
+
+  # Route Tables and Associations
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MobileVPC
+
+  PrivateRouteTableA:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MobileVPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PrivateRouteA:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableA
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayA
+
+  # Route Table Associations
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTableA
+
+  PrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTableA
+
+  # ==================== SECURITY GROUPS ====================
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for mobile API Lambda functions
+      VpcId: !Ref MobileVPC
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic for API calls
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-lambda-sg'
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for PostgreSQL database
+      VpcId: !Ref MobileVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          Description: PostgreSQL access from Lambda functions
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-sg'
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Redis cluster
+      VpcId: !Ref MobileVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+          Description: Redis access from Lambda functions
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-redis-sg'
+
+  # ==================== DATABASE INFRASTRUCTURE ====================
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for mobile backend database
+      SubnetIds:
+        - !Ref DatabaseSubnetA
+        - !Ref DatabaseSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-subnet-group'
+
+  DatabaseParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Parameter group for PostgreSQL with PostGIS and mobile optimizations
+      Family: postgres15
+      Parameters:
+        # PostGIS extension
+        shared_preload_libraries: 'postgis-3'
+        # Mobile-optimized settings
+        log_statement: !If [IsProduction, 'none', 'mod']
+        log_min_duration_statement: !If [IsProduction, '5000', '1000']
+        effective_cache_size: !If [IsProduction, '2GB', '512MB']
+        maintenance_work_mem: !If [IsProduction, '256MB', '64MB']
+        max_connections: !If [IsProduction, '200', '100']
+        # Connection pooling optimization
+        shared_buffers: !If [IsProduction, '512MB', '128MB']
+        work_mem: '16MB'
+        # Climate data query optimization
+        random_page_cost: '1.1'  # SSD optimization
+        effective_io_concurrency: '200'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-db-params'
+
+  MobileDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: !If [IsProduction, 'Snapshot', 'Delete']
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-${Environment}-mobile-db'
+      DBName: seawater_mobile
+      Engine: postgres
+      EngineVersion: '15.4'
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !If [IsProduction, '100', '20']
+      MaxAllocatedStorage: !If [IsProduction, '1000', '100']
+      StorageType: gp3
+      StorageEncrypted: true
+      
+      MasterUsername: !Ref DatabaseUsername
+      MasterUserPassword: !Ref DatabasePassword
+      
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      DBParameterGroupName: !Ref DatabaseParameterGroup
+      
+      BackupRetentionPeriod: !If [IsProduction, 30, 7]
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      
+      MultiAZ: !Condition IsProduction
+      MonitoringInterval: !If [IsProduction, 60, 0]
+      MonitoringRoleArn: !If 
+        - IsProduction
+        - !GetAtt DatabaseMonitoringRole.Arn
+        - !Ref 'AWS::NoValue'
+      
+      EnablePerformanceInsights: !Condition EnableAdvancedFeatures
+      PerformanceInsightsRetentionPeriod: !If [IsProduction, 7, !Ref 'AWS::NoValue']
+      
+      DeletionProtection: !Condition IsProduction
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-mobile-postgresql'
+        - Key: Purpose
+          Value: mobile-backend-database
+
+  # Database Monitoring Role for Production
+  DatabaseMonitoringRole:
+    Type: AWS::IAM::Role
+    Condition: IsProduction
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: monitoring.rds.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole'
+
+  # ==================== REDIS CACHE ====================
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnet group for mobile Redis cluster
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+
+  RedisParameterGroup:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      CacheParameterGroupFamily: redis7.x
+      Description: Parameter group for mobile Redis cluster
+      Properties:
+        maxmemory-policy: 'allkeys-lru'
+        timeout: '300'
+        # Mobile-specific optimizations
+        tcp-keepalive: '300'
+        tcp-backlog: '511'
+
+  MobileRedisCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      CacheClusterId: !Sub '${ProjectName}-${Environment}-mobile-redis'
+      Engine: redis
+      EngineVersion: '7.0'
+      CacheNodeType: !Ref RedisNodeType
+      NumCacheNodes: 1
+      Port: 6379
+      
+      VpcSecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      CacheParameterGroupName: !Ref RedisParameterGroup
+      
+      PreferredMaintenanceWindow: 'sun:03:00-sun:04:00'
+      NotificationTopicArn: !If [HasPushNotifications, !Ref AlertsTopic, !Ref 'AWS::NoValue']
+      
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-mobile-redis'
+        - Key: Purpose
+          Value: mobile-api-caching
+
+  # ==================== API GATEWAY ====================
+  MobileAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-mobile-api'
+      StageName: !Ref Environment
+      EndpointConfiguration:
+        Type: EDGE
+      TracingEnabled: true
+      
+      # CORS configuration for mobile apps
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Device-Id,X-App-Version'"
+        AllowOrigin: !If [IsProduction, "'app://seawater-climate-platform'", "'*'"]
+        MaxAge: "'3600'"
+        AllowCredentials: true
+      
+      # Request/Response compression
+      MinimumCompressionSize: 1024
+      
+      # Custom domain configuration
+      Domain: !If
+        - HasCustomDomain
+        - DomainName: !Ref MobileDomainName
+          CertificateArn: !Ref CertificateArn
+          EndpointConfiguration: EDGE
+          Route53:
+            HostedZoneId: !Ref HostedZone
+        - !Ref 'AWS::NoValue'
+      
+      # Rate limiting and throttling
+      ThrottleConfig:
+        BurstLimit: !If [IsProduction, 5000, 2000]
+        RateLimit: !If [IsProduction, 2000, 1000]
+      
+      # Request validation
+      RequestValidatorId: !Ref APIRequestValidator
+      
+      # Binary media types for mobile
+      BinaryMediaTypes:
+        - 'image/*'
+        - 'application/pdf'
+        - 'application/octet-stream'
+
+  APIRequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      RestApiId: !Ref MobileAPI
+      ValidateRequestBody: true
+      ValidateRequestParameters: true
+
+  # ==================== LAMBDA FUNCTIONS ====================
+  # Core Climate Risk Assessment Function
+  PropertyRiskAssessmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-property-risk'
+      CodeUri: ../handlers/climate/propertyRiskAssessment.js
+      Handler: index.handler
+      Description: Core property risk assessment for mobile app
+      
+      Environment:
+        Variables:
+          CACHE_TTL: '300'  # 5 minute cache for risk assessments
+          CLIMATE_DATA_SOURCES: 'noaa,usgs,fema'
+      
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MobileAPI
+            Path: /api/v1/climate/risk/{locationId}
+            Method: GET
+            RequestParameters:
+              - method.request.path.locationId: true
+              - method.request.querystring.includeHistorical: false
+        ApiPost:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MobileAPI
+            Path: /api/v1/climate/risk/bulk
+            Method: POST
+
+  # Location Services Function (Geocoding)
+  LocationServicesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-location-services'
+      CodeUri: ../handlers/location/locationServices.js
+      Handler: index.handler
+      Description: Geocoding and location services for mobile app
+      
+      Environment:
+        Variables:
+          GEOCODING_PROVIDER: 'mapbox'
+          CACHE_TTL: '86400'  # 24 hour cache for geocoding
+      
+      Events:
+        Geocode:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MobileAPI
+            Path: /api/v1/location/geocode
+            Method: GET
+            RequestParameters:
+              - method.request.querystring.address: true
+        ReverseGeocode:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MobileAPI
+            Path: /api/v1/location/reverse
+            Method: GET
+            RequestParameters:
+              - method.request.querystring.lat: true
+              - method.request.querystring.lng: true
+
+  # User Management Function
+  UserManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-user-management'
+      CodeUri: ../handlers/users/userManagement.js
+      Handler: index.handler
+      Description: User profile and subscription management
+      
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref MobileUserPool
+          SUBSCRIPTION_TABLE: !Ref SubscriptionTable
+      
+      Events:
+        GetProfile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MobileAPI
+            Path: /api/v1/user/profile
+            Method: GET
+            Auth:
+              Authorizer: MobileCognitoAuthorizer
+        UpdateProfile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MobileAPI
+            Path: /api/v1/user/profile
+            Method: PUT
+            Auth:
+              Authorizer: MobileCognitoAuthorizer
+
+  # Climate Data Aggregation Function
+  ClimateDataAggregatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-climate-aggregator'
+      CodeUri: ../handlers/climate/climateDataAggregator.js
+      Handler: index.handler
+      Description: Aggregates climate data from multiple sources
+      Timeout: 60  # Longer timeout for external API calls
+      
+      Environment:
+        Variables:
+          EXTERNAL_API_TIMEOUT: '30000'
+          BATCH_SIZE: '10'
+      
+      Events:
+        HistoricalData:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MobileAPI
+            Path: /api/v1/climate/historical/{locationId}
+            Method: GET
+        ForecastData:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MobileAPI
+            Path: /api/v1/climate/forecast/{locationId}
+            Method: GET
+
+  # Push Notification Function
+  PushNotificationFunction:
+    Type: AWS::Serverless::Function
+    Condition: HasPushNotifications
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-push-notifications'
+      CodeUri: ../handlers/notifications/pushNotifications.js
+      Handler: index.handler
+      Description: Push notifications for mobile app users
+      
+      Environment:
+        Variables:
+          SNS_PLATFORM_APP: !Ref PushNotificationConfig
+          NOTIFICATION_TYPES: 'weather_alert,subscription_reminder,feature_update'
+      
+      Events:
+        SendNotification:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MobileAPI
+            Path: /api/v1/notifications/send
+            Method: POST
+            Auth:
+              Authorizer: MobileCognitoAuthorizer
+
+  # ==================== COGNITO AUTHENTICATION ====================
+  MobileUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${ProjectName}-${Environment}-mobile-users'
+      
+      # Mobile app optimized settings
+      AutoVerifiedAttributes:
+        - email
+      AliasAttributes:
+        - email
+        - preferred_username
+      
+      # Password policy
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false  # Mobile-friendly
+      
+      # Account recovery
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      
+      # User attributes for mobile app
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+        - Name: given_name
+          Required: false
+          Mutable: true
+        - Name: family_name
+          Required: false
+          Mutable: true
+        - Name: picture
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: location_preferences
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+      
+      # Email configuration for mobile
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      
+      UserPoolTags:
+        Environment: !Ref Environment
+        Purpose: mobile-authentication
+
+  MobileUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref MobileUserPool
+      ClientName: !Sub '${ProjectName}-${Environment}-mobile-client'
+      
+      # Mobile app client settings
+      GenerateSecret: false  # Mobile apps don't use client secret
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      
+      # Token configuration
+      AccessTokenValidity: 1  # 1 hour
+      IdTokenValidity: 1      # 1 hour  
+      RefreshTokenValidity: 30 # 30 days
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      
+      # Mobile-specific settings
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      
+      # OAuth settings for social login (future)
+      SupportedIdentityProviders:
+        - COGNITO
+      
+      ReadAttributes:
+        - email
+        - given_name
+        - family_name
+        - picture
+        - location_preferences
+      
+      WriteAttributes:
+        - given_name
+        - family_name
+        - picture
+        - location_preferences
+
+  # API Gateway Cognito Authorizer
+  MobileCognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: MobileCognitoAuthorizer
+      Type: COGNITO_USER_POOLS
+      IdentitySource: method.request.header.Authorization
+      RestApiId: !Ref MobileAPI
+      ProviderARNs:
+        - !GetAtt MobileUserPool.Arn
+
+  # ==================== DYNAMODB TABLES ====================
+  # User Subscription Management
+  SubscriptionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-subscriptions'
+      BillingMode: PAY_PER_REQUEST
+      
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: subscriptionId
+          AttributeType: S
+      
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: subscriptionId
+          KeyType: RANGE
+      
+      # Global Secondary Index for subscription lookups
+      GlobalSecondaryIndexes:
+        - IndexName: SubscriptionIndex
+          KeySchema:
+            - AttributeName: subscriptionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      
+      # Enable point-in-time recovery for production
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !Condition IsProduction
+      
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: subscription-management
+
+  # User Location Preferences
+  LocationPreferencesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-location-preferences'
+      BillingMode: PAY_PER_REQUEST
+      
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: locationId
+          AttributeType: S
+      
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: locationId
+          KeyType: RANGE
+      
+      # TTL for temporary location data
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: user-location-data
+
+  # Mobile Session Management
+  MobileSessionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-mobile-sessions'
+      BillingMode: PAY_PER_REQUEST
+      
+      AttributeDefinitions:
+        - AttributeName: sessionId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      
+      KeySchema:
+        - AttributeName: sessionId
+          KeyType: HASH
+      
+      GlobalSecondaryIndexes:
+        - IndexName: UserIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      
+      # Session expiration (24 hours)
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: mobile-session-tracking
+
+  # ==================== S3 BUCKETS ====================
+  MobileAssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-mobile-assets-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      
+      # Lifecycle for mobile builds
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldMobileBuilds
+            Status: Enabled
+            ExpirationInDays: !If [IsProduction, 90, 30]
+            NoncurrentVersionExpirationInDays: 7
+      
+      VersioningConfiguration:
+        Status: !If [IsProduction, 'Enabled', 'Suspended']
+      
+      # CORS for mobile asset serving
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, HEAD]
+            AllowedOrigins: 
+              - !If [IsProduction, 'app://seawater-climate-platform', '*']
+            MaxAge: 86400
+      
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: mobile-app-assets
+
+  # Mobile App Builds Bucket (for CI/CD)
+  MobileBuildsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${Environment}-mobile-builds-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      
+      # Builds lifecycle management
+      LifecycleConfiguration:
+        Rules:
+          - Id: ArchiveOldBuilds
+            Status: Enabled
+            Transitions:
+              - Days: 30
+                StorageClass: STANDARD_IA
+              - Days: 90
+                StorageClass: GLACIER
+            ExpirationInDays: !If [IsProduction, 365, 180]
+      
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: mobile-app-builds
+
+  # ==================== IAM ROLES AND POLICIES ====================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-mobile-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      
+      Policies:
+        - PolicyName: MobileLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB access
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:UpdateItem'
+                  - 'dynamodb:DeleteItem'
+                  - 'dynamodb:Query'
+                  - 'dynamodb:Scan'
+                Resource:
+                  - !GetAtt SubscriptionTable.Arn
+                  - !GetAtt LocationPreferencesTable.Arn
+                  - !GetAtt MobileSessionTable.Arn
+                  - !Sub '${SubscriptionTable}/index/*'
+                  - !Sub '${LocationPreferencesTable}/index/*'
+                  - !Sub '${MobileSessionTable}/index/*'
+              
+              # S3 access for mobile assets
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource:
+                  - !Sub '${MobileAssetsBucket}/*'
+                  - !Sub '${MobileBuildsBucket}/*'
+              
+              # Cognito access for user management
+              - Effect: Allow
+                Action:
+                  - 'cognito-idp:AdminGetUser'
+                  - 'cognito-idp:AdminUpdateUserAttributes'
+                  - 'cognito-idp:ListUsers'
+                Resource: !GetAtt MobileUserPool.Arn
+              
+              # SNS for push notifications
+              - !If
+                - HasPushNotifications
+                - Effect: Allow
+                  Action:
+                    - 'sns:Publish'
+                    - 'sns:CreatePlatformEndpoint'
+                    - 'sns:DeleteEndpoint'
+                  Resource: !Ref PushNotificationConfig
+                - !Ref 'AWS::NoValue'
+              
+              # CloudWatch metrics
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:PutMetricData'
+                Resource: '*'
+
+  # ==================== CLOUDWATCH MONITORING ====================
+  # SNS Topic for Alerts
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-${Environment}-mobile-alerts'
+      DisplayName: 'Mobile Platform Alerts'
+
+  # CloudWatch Alarms for Mobile APIs
+  APIGateway4xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-api-4xx-errors'
+      AlarmDescription: 'High 4xx error rate on mobile API'
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${ProjectName}-${Environment}-mobile-api'
+        - Name: Stage
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  APIGateway5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-api-5xx-errors'
+      AlarmDescription: 'High 5xx error rate on mobile API'
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub '${ProjectName}-${Environment}-mobile-api'
+        - Name: Stage
+          Value: !Ref Environment
+      AlarmActions:
+        - !Ref AlertsTopic
+
+  DatabaseConnectionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-db-connections'
+      AlarmDescription: 'High database connection count'
+      MetricName: DatabaseConnections
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !If [IsProduction, '160', '80']  # 80% of max connections
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref MobileDatabase
+      AlarmActions:
+        - !Ref AlertsTopic
+
+# ==================== OUTPUTS ====================
+Outputs:
+  MobileAPIURL:
+    Description: Mobile API Gateway URL
+    Value: !Sub 'https://${MobileAPI}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-mobile-api-url'
+
+  MobileAPICustomURL:
+    Condition: HasCustomDomain
+    Description: Mobile API Custom Domain URL
+    Value: !Sub 'https://${MobileDomainName}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-mobile-api-custom-url'
+
+  DatabaseEndpoint:
+    Description: Mobile Database Endpoint
+    Value: !GetAtt MobileDatabase.Endpoint.Address
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-mobile-db-endpoint'
+
+  RedisEndpoint:
+    Description: Mobile Redis Cluster Endpoint
+    Value: !GetAtt MobileRedisCluster.PrimaryEndpoint.Address
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-mobile-redis-endpoint'
+
+  UserPoolId:
+    Description: Cognito User Pool ID for mobile authentication
+    Value: !Ref MobileUserPool
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-user-pool-id'
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID for mobile app
+    Value: !Ref MobileUserPoolClient
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-user-pool-client-id'
+
+  MobileAssetsBucketName:
+    Description: S3 Bucket for mobile assets
+    Value: !Ref MobileAssetsBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-mobile-assets-bucket'
+
+  MobileBuildsBucketName:
+    Description: S3 Bucket for mobile app builds
+    Value: !Ref MobileBuildsBucket
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-mobile-builds-bucket'
+
+  VPCId:
+    Description: VPC ID for mobile backend
+    Value: !Ref MobileVPC
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-mobile-vpc-id'
+
+  PrivateSubnetIds:
+    Description: Private subnet IDs for Lambda functions
+    Value: !Sub '${PrivateSubnetA},${PrivateSubnetB}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-private-subnets'

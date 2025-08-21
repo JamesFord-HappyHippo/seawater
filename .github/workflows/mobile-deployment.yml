@@ -1,0 +1,535 @@
+name: Seawater Mobile Deployment Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'release/*'
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-deployment.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'mobile/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+        - development
+        - test
+        - staging
+        - production
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'build'
+        type: choice
+        options:
+        - build
+        - submit
+        - update
+
+env:
+  NODE_VERSION: '18.x'
+  EXPO_CLI_VERSION: 'latest'
+  EAS_CLI_VERSION: 'latest'
+
+jobs:
+  test:
+    name: Run Mobile Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: mobile/flutter/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mobile/flutter
+        run: npm ci
+
+      - name: Run TypeScript check
+        working-directory: mobile/flutter
+        run: npm run type-check
+
+      - name: Run linting
+        working-directory: mobile/flutter
+        run: npm run lint
+
+      - name: Run unit tests
+        working-directory: mobile/flutter
+        run: npm run test:unit
+
+      - name: Run integration tests
+        working-directory: mobile/flutter
+        run: npm run test:integration
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            mobile/flutter/coverage/
+            mobile/flutter/test-results/
+          retention-days: 30
+
+  build-android:
+    name: Build Android App
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      matrix:
+        environment: [development, test, staging, production]
+        include:
+          - environment: development
+            eas_environment: development
+            artifact_retention: 7
+          - environment: test
+            eas_environment: test
+            artifact_retention: 14
+          - environment: staging
+            eas_environment: staging
+            artifact_retention: 30
+          - environment: production
+            eas_environment: production
+            artifact_retention: 90
+    steps:
+      - name: Check environment conditions
+        id: check_env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" && "${{ matrix.environment }}" != "production" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" && "${{ matrix.environment }}" == "production" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" =~ ^refs/heads/release/ && "${{ matrix.environment }}" != "staging" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout code
+        if: steps.check_env.outputs.skip == 'false'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: steps.check_env.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: mobile/flutter/package-lock.json
+
+      - name: Setup Expo CLI
+        if: steps.check_env.outputs.skip == 'false'
+        run: npm install -g @expo/cli@${{ env.EXPO_CLI_VERSION }}
+
+      - name: Setup EAS CLI
+        if: steps.check_env.outputs.skip == 'false'
+        run: npm install -g eas-cli@${{ env.EAS_CLI_VERSION }}
+
+      - name: Install dependencies
+        if: steps.check_env.outputs.skip == 'false'
+        working-directory: mobile/flutter
+        run: npm ci
+
+      - name: Authenticate with Expo
+        if: steps.check_env.outputs.skip == 'false'
+        run: |
+          echo "${{ secrets.EXPO_TOKEN }}" | eas login --username ${{ secrets.EXPO_USERNAME }} --password-stdin
+
+      - name: Build Android app
+        if: steps.check_env.outputs.skip == 'false'
+        working-directory: mobile/flutter
+        run: |
+          eas build --platform android --profile ${{ matrix.eas_environment }} --non-interactive --wait
+        env:
+          MAPBOX_DEV_TOKEN: ${{ secrets.MAPBOX_DEV_TOKEN }}
+          MAPBOX_TEST_TOKEN: ${{ secrets.MAPBOX_TEST_TOKEN }}
+          MAPBOX_STAGING_TOKEN: ${{ secrets.MAPBOX_STAGING_TOKEN }}
+          MAPBOX_PROD_TOKEN: ${{ secrets.MAPBOX_PROD_TOKEN }}
+          SENTRY_DEV_DSN: ${{ secrets.SENTRY_DEV_DSN }}
+          SENTRY_TEST_DSN: ${{ secrets.SENTRY_TEST_DSN }}
+          SENTRY_STAGING_DSN: ${{ secrets.SENTRY_STAGING_DSN }}
+          SENTRY_PROD_DSN: ${{ secrets.SENTRY_PROD_DSN }}
+
+      - name: Download build artifacts
+        if: steps.check_env.outputs.skip == 'false'
+        working-directory: mobile/flutter
+        run: |
+          BUILD_URL=$(eas build:list --platform android --status finished --limit 1 --json | jq -r '.[0].artifacts.buildUrl')
+          curl -o seawater-android-${{ matrix.environment }}.apk "$BUILD_URL"
+
+      - name: Upload to S3
+        if: steps.check_env.outputs.skip == 'false'
+        run: |
+          aws s3 cp mobile/flutter/seawater-android-${{ matrix.environment }}.apk \
+            s3://seawater-${{ matrix.environment }}-mobile-builds-${{ secrets.AWS_ACCOUNT_ID }}/android/seawater-android-$(date +%Y%m%d-%H%M%S).apk
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Upload build artifact
+        if: steps.check_env.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-${{ matrix.environment }}
+          path: mobile/flutter/seawater-android-${{ matrix.environment }}.apk
+          retention-days: ${{ matrix.artifact_retention }}
+
+  build-ios:
+    name: Build iOS App
+    runs-on: macos-latest
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      matrix:
+        environment: [development, test, staging, production]
+        include:
+          - environment: development
+            eas_environment: development
+            artifact_retention: 7
+          - environment: test
+            eas_environment: test
+            artifact_retention: 14
+          - environment: staging
+            eas_environment: staging
+            artifact_retention: 30
+          - environment: production
+            eas_environment: production
+            artifact_retention: 90
+    steps:
+      - name: Check environment conditions
+        id: check_env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" && "${{ matrix.environment }}" != "production" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" && "${{ matrix.environment }}" == "production" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" =~ ^refs/heads/release/ && "${{ matrix.environment }}" != "staging" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout code
+        if: steps.check_env.outputs.skip == 'false'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: steps.check_env.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: mobile/flutter/package-lock.json
+
+      - name: Setup Expo CLI
+        if: steps.check_env.outputs.skip == 'false'
+        run: npm install -g @expo/cli@${{ env.EXPO_CLI_VERSION }}
+
+      - name: Setup EAS CLI
+        if: steps.check_env.outputs.skip == 'false'
+        run: npm install -g eas-cli@${{ env.EAS_CLI_VERSION }}
+
+      - name: Install dependencies
+        if: steps.check_env.outputs.skip == 'false'
+        working-directory: mobile/flutter
+        run: npm ci
+
+      - name: Authenticate with Expo
+        if: steps.check_env.outputs.skip == 'false'
+        run: |
+          echo "${{ secrets.EXPO_TOKEN }}" | eas login --username ${{ secrets.EXPO_USERNAME }} --password-stdin
+
+      - name: Build iOS app
+        if: steps.check_env.outputs.skip == 'false'
+        working-directory: mobile/flutter
+        run: |
+          eas build --platform ios --profile ${{ matrix.eas_environment }} --non-interactive --wait
+        env:
+          MAPBOX_DEV_TOKEN: ${{ secrets.MAPBOX_DEV_TOKEN }}
+          MAPBOX_TEST_TOKEN: ${{ secrets.MAPBOX_TEST_TOKEN }}
+          MAPBOX_STAGING_TOKEN: ${{ secrets.MAPBOX_STAGING_TOKEN }}
+          MAPBOX_PROD_TOKEN: ${{ secrets.MAPBOX_PROD_TOKEN }}
+          SENTRY_DEV_DSN: ${{ secrets.SENTRY_DEV_DSN }}
+          SENTRY_TEST_DSN: ${{ secrets.SENTRY_TEST_DSN }}
+          SENTRY_STAGING_DSN: ${{ secrets.SENTRY_STAGING_DSN }}
+          SENTRY_PROD_DSN: ${{ secrets.SENTRY_PROD_DSN }}
+
+      - name: Download build artifacts
+        if: steps.check_env.outputs.skip == 'false'
+        working-directory: mobile/flutter
+        run: |
+          BUILD_URL=$(eas build:list --platform ios --status finished --limit 1 --json | jq -r '.[0].artifacts.buildUrl')
+          curl -o seawater-ios-${{ matrix.environment }}.ipa "$BUILD_URL"
+
+      - name: Upload to S3
+        if: steps.check_env.outputs.skip == 'false'
+        run: |
+          aws s3 cp mobile/flutter/seawater-ios-${{ matrix.environment }}.ipa \
+            s3://seawater-${{ matrix.environment }}-mobile-builds-${{ secrets.AWS_ACCOUNT_ID }}/ios/seawater-ios-$(date +%Y%m%d-%H%M%S).ipa
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Upload build artifact
+        if: steps.check_env.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-${{ matrix.environment }}
+          path: mobile/flutter/seawater-ios-${{ matrix.environment }}.ipa
+          retention-days: ${{ matrix.artifact_retention }}
+
+  deploy-backend:
+    name: Deploy Mobile Backend
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      matrix:
+        environment: [dev, test, staging, production]
+        include:
+          - environment: dev
+            aws_account: "532595801838"
+          - environment: test
+            aws_account: "532595801838"
+          - environment: staging
+            aws_account: "855652006097"
+          - environment: production
+            aws_account: "855652006097"
+    steps:
+      - name: Check environment conditions
+        id: check_env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" && "${{ matrix.environment }}" != "production" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" && "${{ matrix.environment }}" == "production" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" =~ ^refs/heads/release/ && "${{ matrix.environment }}" != "staging" ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout code
+        if: steps.check_env.outputs.skip == 'false'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: steps.check_env.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Configure AWS credentials
+        if: steps.check_env.outputs.skip == 'false'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install SAM CLI
+        if: steps.check_env.outputs.skip == 'false'
+        uses: aws-actions/setup-sam@v2
+
+      - name: Install dependencies
+        if: steps.check_env.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Build Lambda functions
+        if: steps.check_env.outputs.skip == 'false'
+        run: npm run build:backend
+
+      - name: Run database migrations
+        if: steps.check_env.outputs.skip == 'false'
+        run: |
+          npm run migrate:${{ matrix.environment }}
+        env:
+          DATABASE_URL: ${{ secrets[format('DATABASE_URL_{0}', upper(matrix.environment))] }}
+
+      - name: Deploy mobile backend infrastructure
+        if: steps.check_env.outputs.skip == 'false'
+        run: |
+          sam deploy \
+            --template-file IAC/mobile-backend-infrastructure.yaml \
+            --stack-name seawater-${{ matrix.environment }}-mobile-backend \
+            --parameter-overrides file://IAC/parameters/${{ matrix.environment }}.json \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region us-east-1 \
+            --s3-bucket seawater-${{ matrix.environment }}-cloudformation-${{ matrix.aws_account }} \
+            --no-fail-on-empty-changeset
+
+      - name: Update Lambda functions
+        if: steps.check_env.outputs.skip == 'false'
+        run: |
+          # Update each Lambda function with new code
+          for function in property-risk location-services user-management climate-aggregator; do
+            aws lambda update-function-code \
+              --function-name seawater-${{ matrix.environment }}-$function \
+              --zip-file fileb://dist/$function.zip \
+              --region us-east-1
+          done
+
+      - name: Invalidate CloudFront cache
+        if: steps.check_env.outputs.skip == 'false'
+        run: |
+          # Get CloudFront distribution ID from stack outputs
+          DISTRIBUTION_ID=$(aws cloudformation describe-stacks \
+            --stack-name seawater-${{ matrix.environment }}-mobile-backend \
+            --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' \
+            --output text --region us-east-1)
+          
+          if [ ! -z "$DISTRIBUTION_ID" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id $DISTRIBUTION_ID \
+              --paths "/*" \
+              --region us-east-1
+          fi
+
+  submit-to-stores:
+    name: Submit to App Stores
+    runs-on: ubuntu-latest
+    needs: [build-android, build-ios]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: mobile/flutter/package-lock.json
+
+      - name: Setup EAS CLI
+        run: npm install -g eas-cli@${{ env.EAS_CLI_VERSION }}
+
+      - name: Install dependencies
+        working-directory: mobile/flutter
+        run: npm ci
+
+      - name: Authenticate with Expo
+        run: |
+          echo "${{ secrets.EXPO_TOKEN }}" | eas login --username ${{ secrets.EXPO_USERNAME }} --password-stdin
+
+      - name: Submit to Google Play Store
+        working-directory: mobile/flutter
+        run: |
+          eas submit --platform android --profile production --latest --non-interactive
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT }}
+
+      - name: Submit to Apple App Store
+        working-directory: mobile/flutter
+        run: |
+          eas submit --platform ios --profile production --latest --non-interactive
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+
+  send-notifications:
+    name: Send Deployment Notifications
+    runs-on: ubuntu-latest
+    needs: [build-android, build-ios, deploy-backend]
+    if: always() && github.event_name != 'pull_request'
+    steps:
+      - name: Determine deployment status
+        id: status
+        run: |
+          if [[ "${{ needs.build-android.result }}" == "success" && 
+                "${{ needs.build-ios.result }}" == "success" && 
+                "${{ needs.deploy-backend.result }}" == "success" ]]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "message=Mobile deployment completed successfully" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "message=Mobile deployment failed - check build logs" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ steps.status.outputs.status }}
+          channel: '#seawater-deployments'
+          message: |
+            ${{ steps.status.outputs.message }}
+            
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Actor: ${{ github.actor }}
+            
+            Build Results:
+            - Android: ${{ needs.build-android.result }}
+            - iOS: ${{ needs.build-ios.result }}
+            - Backend: ${{ needs.deploy-backend.result }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send email notification
+        if: steps.status.outputs.status == 'failure'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: 'Seawater Mobile Deployment Failed'
+          to: ${{ secrets.DEPLOYMENT_NOTIFICATION_EMAILS }}
+          from: 'Seawater CI/CD <${{ secrets.EMAIL_USERNAME }}>'
+          body: |
+            The Seawater mobile deployment has failed.
+            
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Actor: ${{ github.actor }}
+            Workflow: ${{ github.workflow }}
+            
+            Please check the GitHub Actions logs for more details:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  cleanup:
+    name: Cleanup Build Artifacts
+    runs-on: ubuntu-latest
+    needs: [build-android, build-ios, submit-to-stores]
+    if: always()
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Cleanup old build artifacts
+        run: |
+          # Cleanup builds older than 90 days in S3
+          for environment in dev test staging production; do
+            aws s3api list-objects-v2 \
+              --bucket seawater-$environment-mobile-builds-${{ secrets.AWS_ACCOUNT_ID }} \
+              --query "Contents[?LastModified<=\`$(date -d '90 days ago' --iso-8601)\`].Key" \
+              --output text | \
+            xargs -I {} aws s3 rm s3://seawater-$environment-mobile-builds-${{ secrets.AWS_ACCOUNT_ID }}/{} 2>/dev/null || true
+          done

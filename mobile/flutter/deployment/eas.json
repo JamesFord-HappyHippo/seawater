@@ -1,0 +1,132 @@
+{
+  "cli": {
+    "version": ">= 3.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      },
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Debug"
+      },
+      "env": {
+        "ENVIRONMENT": "development",
+        "API_URL": "https://dev-api.seawater.io",
+        "MAPBOX_ACCESS_TOKEN": "$MAPBOX_DEV_TOKEN",
+        "SENTRY_DSN": "$SENTRY_DEV_DSN",
+        "ANALYTICS_ENABLED": "false"
+      }
+    },
+    "test": {
+      "distribution": "internal",
+      "channel": "test",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "ENVIRONMENT": "test",
+        "API_URL": "https://test-api.seawater.io",
+        "MAPBOX_ACCESS_TOKEN": "$MAPBOX_TEST_TOKEN",
+        "SENTRY_DSN": "$SENTRY_TEST_DSN",
+        "ANALYTICS_ENABLED": "true"
+      }
+    },
+    "staging": {
+      "distribution": "internal",
+      "channel": "staging",
+      "android": {
+        "buildType": "aab"
+      },
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "ENVIRONMENT": "staging",
+        "API_URL": "https://staging-api.seawater.io",
+        "MAPBOX_ACCESS_TOKEN": "$MAPBOX_STAGING_TOKEN",
+        "SENTRY_DSN": "$SENTRY_STAGING_DSN",
+        "ANALYTICS_ENABLED": "true"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "channel": "production",
+      "android": {
+        "buildType": "aab"
+      },
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "ENVIRONMENT": "production",
+        "API_URL": "https://api.seawater.io",
+        "MAPBOX_ACCESS_TOKEN": "$MAPBOX_PROD_TOKEN",
+        "SENTRY_DSN": "$SENTRY_PROD_DSN",
+        "ANALYTICS_ENABLED": "true"
+      }
+    }
+  },
+  "submit": {
+    "test": {
+      "android": {
+        "serviceAccountKeyPath": "../secrets/play-console-service-account-test.json",
+        "track": "internal"
+      },
+      "ios": {
+        "appleId": "developer@seawater.io",
+        "ascAppId": "APP_STORE_CONNECT_TEST_APP_ID",
+        "appleTeamId": "APPLE_TEAM_ID"
+      }
+    },
+    "staging": {
+      "android": {
+        "serviceAccountKeyPath": "../secrets/play-console-service-account-staging.json",
+        "track": "alpha"
+      },
+      "ios": {
+        "appleId": "developer@seawater.io",
+        "ascAppId": "APP_STORE_CONNECT_STAGING_APP_ID",
+        "appleTeamId": "APPLE_TEAM_ID"
+      }
+    },
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "../secrets/play-console-service-account-prod.json",
+        "track": "production",
+        "releaseStatus": "draft"
+      },
+      "ios": {
+        "appleId": "developer@seawater.io",
+        "ascAppId": "APP_STORE_CONNECT_PROD_APP_ID",
+        "appleTeamId": "APPLE_TEAM_ID",
+        "submitForReview": false
+      }
+    }
+  },
+  "update": {
+    "development": {
+      "channel": "development"
+    },
+    "test": {
+      "channel": "test"
+    },
+    "staging": {
+      "channel": "staging"
+    },
+    "production": {
+      "channel": "production"
+    }
+  }
+}

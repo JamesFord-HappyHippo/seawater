@@ -1,0 +1,21 @@
+{
+  "name": "seawater-user-registration",
+  "version": "1.0.0",
+  "description": "Seawater user registration handler with trial initialization",
+  "main": "index.js",
+  "dependencies": {
+    "pg": "^8.11.3",
+    "uuid": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "registration",
+    "trial",
+    "cognito",
+    "seawater"
+  ]
+}

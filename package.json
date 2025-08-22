@@ -9,10 +9,9 @@
     "start": "cd src/frontend && npm start",
     "test": "playwright test",
     "test:headed": "playwright test --headed",
-    "test:ui": "playwright test --ui",
+    "test:ui": "playwright test tests/e2e/uiComponents.spec.ts",
     "test:debug": "playwright test --debug",
     "test:report": "playwright show-report",
-    
     "test:auth": "playwright test tests/e2e/auth.spec.ts",
     "test:assessment": "playwright test tests/e2e/propertyRiskAssessment.spec.ts",
     "test:comprehensive": "playwright test tests/e2e/comprehensiveRiskAssessment.spec.ts",
@@ -21,42 +20,34 @@
     "test:responsive": "playwright test tests/e2e/responsiveDesign.spec.ts",
     "test:landing": "playwright test tests/e2e/landingPage.spec.ts",
     "test:trial": "playwright test tests/e2e/trialSystem.spec.ts",
-    "test:ui": "playwright test tests/e2e/uiComponents.spec.ts",
-    
     "test:cross-env": "playwright test tests/e2e/cross-environment/",
     "test:performance": "playwright test tests/performance/ --project=performance",
     "test:visual": "playwright test tests/visual/ --project=visual-regression",
     "test:accessibility": "playwright test tests/accessibility/ --project=accessibility",
-    
     "test:production": "TEST_ENV=production playwright test --project=production-chromium",
     "test:test-env": "TEST_ENV=test playwright test --project=test-env-chromium",
     "test:local": "TEST_ENV=local playwright test",
-    
     "test:mobile": "playwright test --project='Mobile Chrome'",
     "test:tablet": "playwright test --project='Tablet iPad'",
     "test:chrome": "playwright test --project=chromium",
     "test:firefox": "playwright test --project=firefox",
     "test:webkit": "playwright test --project=webkit",
     "test:edge": "playwright test --project='Microsoft Edge'",
-    
     "test:core": "playwright test tests/e2e/landingPage.spec.ts tests/e2e/trialSystem.spec.ts tests/e2e/comprehensiveRiskAssessment.spec.ts",
     "test:full-suite": "playwright test tests/e2e/ tests/performance/ tests/visual/ tests/accessibility/",
-    
     "backend:dev": "cd src/backend && npm run dev",
     "backend:build": "cd src/backend && npm run build",
     "backend:deploy": "cd src/backend && npm run deploy",
-    
     "deploy-agents": "node scripts/deploy-agents.js",
     "deploy-agents:dev": "node scripts/deploy-agents.js dev",
     "deploy-agents:generate": "node scripts/deploy-agents.js generate",
     "deploy-agents:deploy": "node scripts/deploy-agents.js deploy",
-    
     "mobile:build": "cd mobile/seawater_app && flutter build apk --debug",
     "mobile:test": "cd mobile/seawater_app && flutter test",
     "mobile:analyze": "cd mobile/seawater_app && flutter analyze --no-fatal-infos",
-    
     "lint": "eslint . --ext .ts,.tsx --fix",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "agents": "node src/agents/cli/orchestrator-cli.js"
   },
   "keywords": [
     "climate",
@@ -76,14 +67,15 @@
   "devDependencies": {
     "@playwright/test": "^1.40.0",
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
     "eslint": "^8.0.0",
-    "prettier": "^3.0.0"
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
   },
   "dependencies": {
     "amazon-cognito-identity-js": "^6.3.6",
-    "lucide-react": "^0.300.0",
-    "clsx": "^2.0.0"
+    "clsx": "^2.0.0",
+    "commander": "^12.1.0",
+    "lucide-react": "^0.300.0"
   },
   "engines": {
     "node": ">=18.0.0",

@@ -86,16 +86,179 @@
       "frameworks": ["Playwright", "React Testing Library", "Jest"]
     },
     
-    "security-reviewer": {
-      "description": "Performs security analysis and validation",
+    "SecurityReviewerAgent": {
+      "path": "src/agents/specialists/SecurityReviewerAgent.js",
+      "description": "Comprehensive security analysis with production cost controls",
       "capabilities": [
         "security-pattern-analysis",
         "vulnerability-scanning",
-        "authentication-review",
-        "data-protection-validation"
+        "production-readiness-assessment", 
+        "cost-controlled-security",
+        "compliance-validation",
+        "risk-assessment",
+        "progressive-security-enhancement",
+        "arm64-optimization-recognition"
       ],
+      "securityIntegration": {
+        "patterns": "tim_combo_security_standards",
+        "validation": "automated_security_validation", 
+        "thresholds": "production_cost_controls",
+        "compliance": "progressive_security_enhancement",
+        "architecture": "serverless_arm64_aware"
+      },
       "outputFormats": ["JSON", "Markdown"],
-      "standards": ["OWASP", "AWS Security", "RBAC patterns"]
+      "standards": ["OWASP", "AWS Security", "RBAC patterns", "Progressive Security Philosophy"],
+      "status": "active"
+    },
+
+    "SecurityTriageAgent": {
+      "path": "src/agents/specialists/SecurityTriageAgent.js",
+      "description": "Intelligent security finding triage for water quality and marine systems",
+      "capabilities": [
+        "security-finding-triage",
+        "strategy-based-filtering",
+        "acceptable-risk-assessment",
+        "false-positive-detection",
+        "pilot-readiness-evaluation",
+        "contextual-security-analysis",
+        "risk-level-calculation",
+        "marine-system-security-analysis"
+      ],
+      "securityIntegration": {
+        "strategy": "water_quality_security_standards",
+        "filtering": "context_aware_triage",
+        "validation": "strategy_compliance_check",
+        "reporting": "actionable_insights",
+        "domain": "marine_systems_security"
+      },
+      "outputFormats": ["JSON", "Markdown"],
+      "standards": ["Water Quality Security", "Marine Systems Security", "Progressive Security Philosophy", "Environmental Data Protection"],
+      "status": "active"
+    },
+
+    "AgentClassifier": {
+      "path": "src/agents/specialists/AgentClassifier.js",
+      "description": "Agent classification and intelligent routing",
+      "capabilities": [
+        "task-classification",
+        "agent-selection", 
+        "workflow-optimization",
+        "load-balancing"
+      ],
+      "outputFormats": ["JSON"],
+      "status": "active"
+    },
+
+    "AgentMemoryManager": {
+      "path": "src/agents/specialists/AgentMemoryManager.js",
+      "description": "Agent memory and context management", 
+      "capabilities": [
+        "context-preservation",
+        "memory-optimization",
+        "state-management",
+        "session-coordination"
+      ],
+      "outputFormats": ["JSON"],
+      "status": "active"
+    },
+
+    "TestAgent": {
+      "path": "src/agents/specialists/TestAgent.js",
+      "description": "Comprehensive UI testing with intelligent element remapping",
+      "capabilities": [
+        "ui-element-remapping",
+        "test-scenario-generation", 
+        "cross-browser-testing",
+        "visual-regression-detection",
+        "test-maintenance-automation",
+        "playwright-test-generation",
+        "cypress-test-generation",
+        "element-stability-analysis",
+        "test-data-management",
+        "accessibility-testing",
+        "performance-testing",
+        "mobile-responsive-testing",
+        "component-testing",
+        "integration-testing",
+        "e2e-testing"
+      ],
+      "outputFormats": ["JavaScript", "TypeScript", "JSON"],
+      "testFrameworks": ["Playwright", "Cypress", "Selenium", "Jest"],
+      "browsers": ["chromium", "firefox", "webkit", "chrome", "edge"],
+      "status": "active",
+      "specialization": "ui-element-remapping"
+    },
+
+    "TestDataAgent": {
+      "path": "src/agents/specialists/TestDataAgent.js",
+      "description": "Specialized database coherence and realistic test data generation",
+      "capabilities": [
+        "test-data-generation",
+        "database-coherence-management",
+        "referential-integrity-validation",
+        "scenario-based-data-creation",
+        "realistic-data-patterns",
+        "multi-entity-relationships",
+        "data-cleanup-automation",
+        "business-logic-consistency",
+        "cross-environment-data-sync",
+        "performance-data-simulation",
+        "integration-test-scenarios",
+        "employee-data-generation"
+      ],
+      "outputFormats": ["JSON", "SQL"],
+      "status": "active",
+      "specialization": "database-test-data"
+    },
+
+    "UIUXSpecialistAgent": {
+      "path": "src/agents/specialists/UIUXSpecialistAgent.js",
+      "description": "Design consistency and accessibility automation specialist",
+      "capabilities": [
+        "design-system-compliance",
+        "accessibility-validation",
+        "visual-consistency-analysis",
+        "component-design-optimization",
+        "user-experience-enhancement",
+        "responsive-design-validation",
+        "brand-consistency-enforcement",
+        "color-contrast-analysis",
+        "typography-optimization",
+        "layout-pattern-standardization",
+        "interaction-design-validation",
+        "mobile-first-design",
+        "wcag-compliance-checking",
+        "design-token-management",
+        "component-library-curation"
+      ],
+      "outputFormats": ["TypeScript", "CSS", "JSON", "Design Tokens"],
+      "designSystems": ["happyhippo", "flux_systems"],
+      "accessibilityStandards": ["WCAG_2_1_AA", "Section_508"],
+      "status": "active",
+      "specialization": "ui-ux-design"
+    },
+
+    "AgentFactoryAgent": {
+      "path": "src/agents/specialists/AgentFactoryAgent.js",
+      "description": "Self-bootstrapping agent generation system",
+      "capabilities": [
+        "agent-code-generation",
+        "lambda-handler-creation",
+        "react-component-generation", 
+        "api-endpoint-design",
+        "database-schema-architecture",
+        "test-suite-generation",
+        "domain-extension-creation",
+        "template-driven-development",
+        "standards-enforcement",
+        "multi-framework-support",
+        "code-pattern-replication",
+        "automated-documentation"
+      ],
+      "outputFormats": ["JavaScript", "TypeScript", "SQL", "YAML", "JSON"],
+      "frameworks": ["React", "Node.js", "AWS Lambda", "PostgreSQL"],
+      "status": "active",
+      "specialization": "self-bootstrapping-generation"
     },
     
     "deployment-orchestrator": {
